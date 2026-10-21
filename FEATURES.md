@@ -100,11 +100,11 @@ Track layout follows Windows 1.0, which is the only documented early layout ⚠�
 ### Timecode and EDL
 - [x] SMPTE timecode display (`HH:MM:SS:FF`) throughout the interface ✅ [2.0]
 - [x] Drop-frame timecode for 29.97 fps (`HH:MM:SS;FF`) and non-drop-frame timecode ⚠️
-- [ ] EDL export of the timeline 🔁 (CMX 3600 format, which modern editors read) ✅ [2.0]
+- [x] EDL export of the timeline 🔁 (CMX 3600 format, which modern editors read) ✅ [2.0]
 
 ### New formats
-- [ ] Import numbered image sequences (`frame001.png`, …) as one clip 🔁 (originally numbered PICT sequences ✅ [2.0])
-- [ ] **Filmstrip export and import**: a clip exported as one tall image of stacked, timecode-labeled frames that can be edited in an image editor and imported back as video 🔁 (originally `.flm` ✅ [2.0])
+- [x] Import numbered image sequences (`frame001.png`, …) as one clip 🔁 (originally numbered PICT sequences ✅ [2.0])
+- [x] **Filmstrip export and import**: a clip exported as one tall image of stacked, timecode-labeled frames that can be edited in an image editor and imported back as video 🔁 (originally `.flm` ✅ [2.0])
 
 ---
 

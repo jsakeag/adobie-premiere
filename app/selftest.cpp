@@ -1,6 +1,9 @@
 #include "selftest.h"
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <cstdio>
 #include <functional>
 #include <thread>
@@ -26,6 +29,7 @@
 #include "make_windows.h"
 #include "motion_window.h"
 #include "mpp/ffmpeg_source.h"
+#include "mpp/filmstrip.h"
 #include "mpp/image_io.h"
 #include "mpp/renderer.h"
 #include "transition_windows.h"
@@ -704,6 +708,51 @@ int run_selftest(const std::string& out_dir, const std::string& fixtures) {
     }
     check(project().clip(moving) && project().clip(moving)->speed == 50 && !app->message().empty(),
           "a speed that would run into the next clip is refused");
+
+    // Milestone 9: image sequences, Filmstrips, EDLs, drop-frame timecode.
+    app->new_project();
+    {
+      mpp::ProjectSettings s = project().settings;
+      s.rate = {30000, 1001, true};
+      s.audio_bits = 16;
+      s.audio_rate = 44100;
+      app->apply_settings(s);
+    }
+    const std::string seq_dir = out_dir + "/selftest_sequence";
+    std::filesystem::create_directories(seq_dir);
+    for (int i = 1; i <= 12; ++i) {
+      char name[64];
+      std::snprintf(name, sizeof(name), "/frame_%03d.png", i);
+      const auto v = static_cast<std::uint8_t>(i * 20);
+      mpp::save_png(mpp::Image(320, 240, {v, 0, static_cast<std::uint8_t>(255 - v), 255}), seq_dir + name);
+    }
+    check(app->import_sequence(seq_dir + "/frame_005.png"), "File > Import Sequence from any of its images");
+    const mpp::MediaItem* numbered = project().bin.empty() ? nullptr : &project().bin.back();
+    check(numbered && numbered->sequence && numbered->sequence->count == 12 && numbered->out == 12,
+          "all twelve numbered images become one clip");
+    app->import(media("counter.mov"));
+    app->place(project().bin[0].id, mpp::Track::VideoA, 0);
+    app->place(project().bin[1].id, mpp::Track::VideoA, 12);
+    app->set_edit_line(3);
+    app->draw_all();
+    check(app->preview_window()->view()->frame().pixel(10, 10) == mpp::Color{80, 0, 175, 255},
+          "frame 3 of the program is the fourth image");
+    app->set_work_area(0, 20);
+    check(app->export_filmstrip(out_dir + "/selftest_strip"), "Make > Filmstrip");
+    check(app->import(out_dir + "/selftest_strip.png") &&
+              project().bin.back().info.kind == mpp::MediaKind::Filmstrip && project().bin.back().out == 20,
+          "importing it brings it back as a 20-frame clip, not a still");
+    check(app->export_edl(out_dir + "/selftest"), "Make > EDL");
+    {
+      std::ifstream edl(out_dir + "/selftest.edl");
+      const std::string text((std::istreambuf_iterator<char>(edl)), std::istreambuf_iterator<char>());
+      check(text.find("FCM: DROP FRAME") != std::string::npos &&
+                text.find("* FROM CLIP NAME: frame_001.png (12 frames)") != std::string::npos &&
+                text.find("01:00:00;00") != std::string::npos,
+            "the EDL is in drop-frame timecode and names the clips");
+    }
+    app->draw_all();
+    shot("38_sequence_and_filmstrip");
   }
   nanogui::shutdown();
   std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "PASSED", failures);

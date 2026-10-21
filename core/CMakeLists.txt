@@ -3,12 +3,15 @@ add_library(mpp_core STATIC
   src/bin_commands.cpp
   src/command.cpp
   src/compositing.cpp
+  src/edl.cpp
   src/editor.cpp
   src/export_job.cpp
   src/ffmpeg_source.cpp
+  src/filmstrip.cpp
   src/filters.cpp
   src/image.cpp
   src/image_io.cpp
+  src/image_sequence.cpp
   src/keys.cpp
   src/media.cpp
   src/media_cache.cpp

@@ -18,6 +18,9 @@
 #include "motion_window.h"
 #include "mpp/audio_mixer.h"
 #include "mpp/compositing.h"
+#include "mpp/edl.h"
+#include "mpp/filmstrip.h"
+#include "mpp/image_sequence.h"
 #include "mpp/bin_commands.h"
 #include "mpp/image_io.h"
 #include "mpp/project_file.h"
@@ -142,6 +145,7 @@ std::vector<Menu> App::build_menus() {
         {"Save As...", "Cmd+Shift+S", [this] { save_as_dialog(); }},
         {"", "", nullptr},
         {"Import...", "Cmd+I", [this] { import_dialog(); }},
+        {"Import Sequence...", "", [this] { import_sequence_dialog(); }},
         {"New Title", "Cmd+T", [this] { new_title(); }},
         {"", "", nullptr},
         {"Quit", "Cmd+Q", [this] { confirm_discard([this] { set_visible(false); }); }},
@@ -210,6 +214,8 @@ std::vector<Menu> App::build_menus() {
         {"", "", nullptr},
         {"Movie...", "Cmd+M", [this] { open_export_dialog(); }, program && !exporting()},
         {"Frame...", "", [this] { export_frame_dialog(); }},
+        {"Filmstrip...", "", [this] { export_filmstrip_dialog(); }, program},
+        {"EDL...", "", [this] { export_edl_dialog(); }, program},
         {"", "", nullptr},
         {"Print to Video...", "", [this] { print_to_video(); }, program},
     };
@@ -252,6 +258,7 @@ void App::set_project(mpp::Project project, const std::string& name, const std::
   clip_shown_item_ = -1;
   edit_line_ = 0;
   construction_->view()->scroll_to_start();
+  construction_->view()->forget_thumbnails();  // ids repeat between projects
   message_.clear();
   doc_name_ = name;
   doc_path_ = path;
@@ -324,7 +331,11 @@ void App::open_dialog() {
 bool App::import(const std::string& path) {
   mpp::MediaItem item;
   try {
-    item = mpp::make_item(path, cache_.info(path), project().settings);
+    // A PNG may be a Filmstrip, which comes in as a clip.
+    std::optional<mpp::FilmstripInfo> strip;
+    if (mpp::is_image_path(path)) strip = mpp::read_filmstrip_info(cache_.frame(path, 0));
+    item = strip ? mpp::make_filmstrip_item(path, *strip, project().settings)
+                 : mpp::make_item(path, cache_.info(path), project().settings);
   } catch (const std::exception& e) {
     message_ = e.what();
     return false;
@@ -333,6 +344,72 @@ bool App::import(const std::string& path) {
   selected_item_ = project().bin.back().id;
   message_ = "Imported " + item.name;
   return true;
+}
+
+bool App::import_sequence(const std::string& picked) {
+  const auto sequence = mpp::find_image_sequence(picked);
+  if (!sequence) {
+    message_ = mpp::file_name(picked) + " isn't one of a run of numbered images";
+    return false;
+  }
+  mpp::MediaItem item;
+  try {
+    item = mpp::make_sequence_item(*sequence, cache_.info(sequence->path(0)), project().settings);
+  } catch (const std::exception& e) {
+    message_ = e.what();
+    return false;
+  }
+  if (!run(std::make_unique<mpp::AddItemCommand>(item))) return false;
+  selected_item_ = project().bin.back().id;
+  message_ = "Imported " + item.name;
+  return true;
+}
+
+void App::import_sequence_dialog() {
+  const std::vector<std::string> paths = nanogui::file_dialog(
+      this, nanogui::FileDialogType::Open,
+      {{"png", "PNG"}, {"jpg", "JPEG"}, {"bmp", "BMP"}, {"tga", "Targa"}, {"gif", "GIF"}});
+  if (!paths.empty()) import_sequence(paths.front());
+}
+
+bool App::export_edl(const std::string& path) {
+  std::string target = path;
+  if (target.size() < 4 || target.compare(target.size() - 4, 4, ".edl") != 0) target += ".edl";
+  try {
+    const std::string stem = doc_name_.substr(0, doc_name_.rfind('.'));
+    mpp::save_edl(project(), stem.empty() ? doc_name_ : stem, target);
+  } catch (const std::exception& e) {
+    message_ = e.what();
+    return false;
+  }
+  message_ = "Saved the EDL as " + target;
+  return true;
+}
+
+void App::export_edl_dialog() {
+  const std::vector<std::string> paths =
+      nanogui::file_dialog(this, nanogui::FileDialogType::Save, {{"edl", "Edit decision list"}});
+  if (!paths.empty()) export_edl(paths.front());
+}
+
+bool App::export_filmstrip(const std::string& path) {
+  const auto [first, last] = make_range(false);
+  std::string target = path;
+  if (target.size() < 4 || target.compare(target.size() - 4, 4, ".png") != 0) target += ".png";
+  try {
+    mpp::export_filmstrip(project(), cache_, target, first, last);
+  } catch (const std::exception& e) {
+    message_ = e.what();
+    return false;
+  }
+  message_ = "Saved " + std::to_string(last - first) + " frames as the Filmstrip " + target;
+  return true;
+}
+
+void App::export_filmstrip_dialog() {
+  const std::vector<std::string> paths =
+      nanogui::file_dialog(this, nanogui::FileDialogType::Save, {{"png", "Filmstrip (PNG)"}});
+  if (!paths.empty()) export_filmstrip(paths.front());
 }
 
 void App::import_dialog() {

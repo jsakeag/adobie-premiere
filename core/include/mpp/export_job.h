@@ -21,6 +21,11 @@ void export_movie(const Project& project, MediaCache& cache, const std::string& 
                   MovieFormat format, std::int64_t first, std::int64_t last,
                   const std::function<bool(double)>& keep_going = nullptr);
 
+// Writes frames [first, last) of the program as a Filmstrip PNG. Throws
+// std::runtime_error.
+void export_filmstrip(const Project& project, MediaCache& cache, const std::string& path,
+                      std::int64_t first, std::int64_t last);
+
 // export_movie on a background thread, with its own media readers.
 class ExportJob {
  public:

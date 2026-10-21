@@ -8,6 +8,8 @@
 #include <vector>
 
 #include "mpp/filters.h"
+#include "mpp/filmstrip.h"
+#include "mpp/image_sequence.h"
 #include "mpp/keys.h"
 #include "mpp/media.h"
 #include "mpp/motion.h"
@@ -48,6 +50,7 @@ struct MediaItem {
   std::int64_t in = 0;
   std::int64_t out = 0;
   std::optional<TitleSpec> title;
+  std::optional<ImageSequence> sequence;  // numbered stills (2.0); no path
 };
 
 // The Construction window's tracks, top to bottom. The transition track
@@ -157,6 +160,15 @@ std::optional<std::int64_t> source_length(const MediaInfo& info, Rate project_ra
 // it (a still gets `still_frames`).
 MediaItem make_item(const std::string& path, const MediaInfo& info,
                     const ProjectSettings& settings);
+
+// A bin item for numbered stills, one per frame at the project's rate.
+// `first` is what the first image holds (its size).
+MediaItem make_sequence_item(const ImageSequence& sequence, const MediaInfo& first,
+                             const ProjectSettings& settings);
+
+// A bin item for a Filmstrip PNG, one frame per strip frame at its rate.
+MediaItem make_filmstrip_item(const std::string& path, const FilmstripInfo& strip,
+                              const ProjectSettings& settings);
 
 // A bin item for a title, lasting `still_frames` when placed.
 MediaItem make_title_item(const TitleSpec& title, const std::string& name,

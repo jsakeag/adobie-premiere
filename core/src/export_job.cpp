@@ -6,6 +6,8 @@
 #include <utility>
 
 #include "mpp/audio_mixer.h"
+#include "mpp/filmstrip.h"
+#include "mpp/image_io.h"
 #include "mpp/renderer.h"
 
 namespace mpp {
@@ -41,6 +43,14 @@ void export_movie(const Project& project, MediaCache& cache, const std::string& 
     }
   }
   writer.finish();
+}
+
+void export_filmstrip(const Project& project, MediaCache& cache, const std::string& path,
+                      std::int64_t first, std::int64_t last) {
+  if (last <= first) throw std::runtime_error("There's nothing to export");
+  std::vector<Image> frames;
+  for (std::int64_t f = first; f < last; ++f) frames.push_back(render_frame(project, cache, f));
+  save_png(make_filmstrip(frames, project.settings.rate, first), path);
 }
 
 ExportJob::ExportJob(Project project, std::string path, MovieFormat format, std::int64_t first,

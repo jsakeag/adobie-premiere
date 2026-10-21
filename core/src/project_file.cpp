@@ -147,6 +147,12 @@ std::string encode_project(const Project& p, const std::string& project_dir) {
                      {"sample_rate", i.sample_rate},
                      {"channels", i.channels}}}};
     if (item.title) entry["title"] = title_json(*item.title);
+    if (item.sequence) {
+      entry["sequence"] = {{"pattern", item.sequence->pattern},
+                           {"relative", relative_to(item.sequence->pattern, project_dir)},
+                           {"first", item.sequence->first},
+                           {"count", item.sequence->count}};
+    }
     bin.push_back(entry);
   }
   j["bin"] = bin;
@@ -251,6 +257,22 @@ Project decode_project(const std::string& text, const std::string& project_dir) 
       item.info.sample_rate = i.at("sample_rate").get<int>();
       item.info.channels = i.at("channels").get<int>();
       if (b.contains("title")) item.title = title_from(b.at("title"));
+      if (b.contains("sequence")) {
+        const json& q = b.at("sequence");
+        ImageSequence seq;
+        seq.pattern = q.at("pattern").get<std::string>();
+        seq.first = q.at("first").get<int>();
+        seq.count = q.at("count").get<int>();
+        // Found again if moved with the project, as files are.
+        std::error_code ec;
+        const std::string relative = q.value("relative", "");
+        if (!fs::exists(seq.path(0), ec) && !relative.empty() && !project_dir.empty()) {
+          ImageSequence moved = seq;
+          moved.pattern = (fs::path(project_dir) / relative).lexically_normal().string();
+          if (fs::exists(moved.path(0), ec)) seq = moved;
+        }
+        item.sequence = seq;
+      }
       p.bin.push_back(std::move(item));
     }
     for (const json& c : j.at("clips")) {

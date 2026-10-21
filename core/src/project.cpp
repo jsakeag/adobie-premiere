@@ -129,6 +129,38 @@ MediaItem make_item(const std::string& path, const MediaInfo& info,
   return item;
 }
 
+MediaItem make_sequence_item(const ImageSequence& sequence, const MediaInfo& first,
+                             const ProjectSettings& settings) {
+  MediaItem item;
+  item.name = file_name(sequence.path(0)) + " (" + std::to_string(sequence.count) + " frames)";
+  item.info.kind = MediaKind::Sequence;
+  item.info.width = first.width;
+  item.info.height = first.height;
+  item.info.has_video = true;
+  item.info.rate = settings.rate;
+  item.info.frames = sequence.count;
+  item.sequence = sequence;
+  item.in = 0;
+  item.out = sequence.count;
+  return item;
+}
+
+MediaItem make_filmstrip_item(const std::string& path, const FilmstripInfo& strip,
+                              const ProjectSettings& settings) {
+  MediaItem item;
+  item.path = path;
+  item.name = file_name(path);
+  item.info.kind = MediaKind::Filmstrip;
+  item.info.width = strip.width;
+  item.info.height = strip.height;
+  item.info.has_video = true;
+  item.info.rate = strip.rate;
+  item.info.frames = strip.count;
+  item.in = 0;
+  item.out = source_length(item.info, settings.rate).value_or(1);
+  return item;
+}
+
 MediaItem make_title_item(const TitleSpec& title, const std::string& name,
                           const ProjectSettings& settings) {
   MediaItem item;

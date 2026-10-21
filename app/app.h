@@ -160,6 +160,13 @@ class App : public nanogui::Screen {
   double export_progress() const;
   void open_export_dialog();
   ExportWindow* export_window() const { return export_window_; }
+  // File > Import Sequence: the numbered images a picked file belongs to,
+  // as one clip.
+  bool import_sequence(const std::string& picked);
+  // Make > EDL: the program as a CMX 3600 edit decision list.
+  bool export_edl(const std::string& path);
+  // Make > Filmstrip: the work area (or program) as a Filmstrip PNG.
+  bool export_filmstrip(const std::string& path);
   // Make > Frame: the program at the edit line as a PNG.
   bool export_frame(const std::string& path);
   // Make > Print to Video: plays the work area full screen.
@@ -236,6 +243,9 @@ class App : public nanogui::Screen {
   void finish_export();
   void end_print();
   void export_frame_dialog();
+  void import_sequence_dialog();
+  void export_edl_dialog();
+  void export_filmstrip_dialog();
   // A double-click in the Project window: the Title window for a title,
   // the Clip window otherwise.
   void open_item(int id);

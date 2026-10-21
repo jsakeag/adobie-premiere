@@ -4,6 +4,7 @@
 #include <exception>
 
 #include "mpp/compositing.h"
+#include "mpp/filmstrip.h"
 #include "mpp/motion.h"
 #include "mpp/resample.h"
 #include "mpp/title.h"
@@ -19,7 +20,14 @@ Image item_picture(const Project& project, MediaCache& cache, const MediaItem& i
                    double position) {
   const ProjectSettings& s = project.settings;
   if (item.title) return render_title(*item.title, s.width, s.height);
-  return cache.frame(item.path, source_frame(item.info, s.rate, position));
+  const std::int64_t index = source_frame(item.info, s.rate, position);
+  if (item.sequence) return cache.frame(item.sequence->path(static_cast<int>(index)), 0);
+  if (item.info.kind == MediaKind::Filmstrip) {
+    const FilmstripInfo strip{item.info.width, item.info.height, static_cast<int>(item.info.frames),
+                              item.info.rate, 0};
+    return filmstrip_frame(cache.frame(item.path, 0), strip, static_cast<int>(index));
+  }
+  return cache.frame(item.path, index);
 }
 
 double clip_progress(const Clip& clip, std::int64_t frame) {
