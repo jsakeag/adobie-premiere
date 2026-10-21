@@ -43,6 +43,9 @@ mpp::Project sample() {
   k.blend = 0.05;
   k.reverse = true;
   e.execute(std::make_unique<mpp::SetKeyCommand>(clip, k));
+  e.execute(std::make_unique<mpp::SetFiltersCommand>(
+      clip, std::vector<mpp::FilterInstance>{{"ripple", {1, 20, 0}, {12.5, 40, 360}},
+                                             mpp::default_instance("invert")}));
   return e.project();
 }
 
@@ -73,6 +76,7 @@ void check_same(const mpp::Project& a, const mpp::Project& b) {
     CHECK(a.clips[i].link == b.clips[i].link);
     CHECK(a.clips[i].fade == b.clips[i].fade);
     CHECK(a.clips[i].key == b.clips[i].key);
+    CHECK(a.clips[i].filters == b.clips[i].filters);
   }
   REQUIRE(a.transitions.size() == b.transitions.size());
   for (std::size_t i = 0; i < a.transitions.size(); ++i) {

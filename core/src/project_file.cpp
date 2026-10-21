@@ -98,7 +98,12 @@ std::string encode_project(const Project& p, const std::string& project_dir) {
     json fade = json::array();
     for (const FadePoint& f : c.fade) fade.push_back(json::array({f.position, f.level}));
     const TransparencyKey& k = c.key;
-    clips.push_back({{"id", c.id},
+    json filters = json::array();
+    for (const FilterInstance& f : c.filters) {
+      filters.push_back({{"id", f.id}, {"start", f.start}, {"end", f.end}});
+    }
+    clips.push_back({{"filters", filters},
+                     {"id", c.id},
                      {"item", c.item},
                      {"track", track_name(c.track)},
                      {"start", c.start},
@@ -191,6 +196,11 @@ Project decode_project(const std::string& text, const std::string& project_dir) 
       clip.link = c.at("link").get<int>();
       for (const json& f : c.value("fade", json::array())) {
         clip.fade.push_back({f.at(0).get<double>(), f.at(1).get<double>()});
+      }
+      for (const json& f : c.value("filters", json::array())) {
+        clip.filters.push_back({f.at("id").get<std::string>(),
+                                f.at("start").get<std::vector<double>>(),
+                                f.at("end").get<std::vector<double>>()});
       }
       if (c.contains("key")) {
         const json& k = c.at("key");

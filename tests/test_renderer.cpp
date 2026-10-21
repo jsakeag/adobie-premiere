@@ -132,3 +132,23 @@ TEST_CASE("the Super track is keyed and faded over the program", "[render][keys]
   CHECK(half.r == std::lround((255 + a.r) / 2.0));
   CHECK(half.b == std::lround((0 + a.b) / 2.0));
 }
+
+TEST_CASE("filters run on each clip, blending start to end", "[render][filters]") {
+  mpp::ProjectSettings settings;
+  settings.width = 160;
+  settings.height = 120;
+  settings.rate = {15, 1, false};
+  mpp::Editor e(project_with({"still.png"}, settings));
+  e.execute(std::make_unique<mpp::PlaceClipCommand>(1, Track::VideoA, 0, 0, 11));
+  const int id = e.project().clips[0].id;
+  // Brightness from -100 on the first frame to +100 on the last.
+  e.execute(std::make_unique<mpp::SetFiltersCommand>(
+      id, std::vector<mpp::FilterInstance>{{"brightness_contrast", {-100, 0}, {100, 0}}}));
+  mpp::MediaCache cache;
+  const mpp::Project& p = e.project();
+  CHECK(mpp::render_frame(p, cache, 0).pixel(140, 60) == Color{155, 155, 0, 255});
+  CHECK(mpp::render_frame(p, cache, 5).pixel(140, 60) == Color{255, 255, 0, 255});
+  CHECK(mpp::render_frame(p, cache, 10).pixel(20, 60) == Color{100, 100, 255, 255});
+  // Filters don't touch the letterbox.
+  CHECK(mpp::render_frame(p, cache, 10).pixel(80, 5) == mpp::kBlack);
+}

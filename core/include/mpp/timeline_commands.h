@@ -150,6 +150,21 @@ class SetFadeCommand : public Command {
   void apply(Project& p) override;
 };
 
+// The Filters dialog's OK: a clip's whole filter list, in order. Video
+// clips take video filters and sound clips audio ones; every value must be
+// within its parameter's range.
+class SetFiltersCommand : public Command {
+ public:
+  SetFiltersCommand(int clip, std::vector<FilterInstance> filters)
+      : clip(clip), filters(std::move(filters)) {}
+  std::string name() const override { return "Filters"; }
+  const int clip;
+  const std::vector<FilterInstance> filters;
+
+ protected:
+  void apply(Project& p) override;
+};
+
 // The Transparency dialog's OK.
 class SetKeyCommand : public Command {
  public:

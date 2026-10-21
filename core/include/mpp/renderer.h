@@ -12,9 +12,23 @@ namespace mpp {
 // timeline frame.
 double clip_source_position(const Clip& clip, std::int64_t frame);
 
+// How far through a clip a timeline frame is: 0 at its first frame, 1 at
+// its last. Filters blend their start and end values by this.
+double clip_progress(const Clip& clip, std::int64_t frame);
+
+// A clip's picture at a timeline frame, scaled to fit the project's frame
+// (keeping its shape, so it may be narrower or shorter than the frame),
+// before filters. With `keep_alpha` false it is made opaque on black first.
+// Throws if the media can't be read; a clip without a picture gives an
+// empty image.
+Image clip_source(const Project& project, MediaCache& cache, const Clip& clip,
+                  std::int64_t frame, bool keep_alpha = true);
+
 // A clip's picture at a timeline frame, fitted into the project's frame
-// size on a transparent background. With `keep_alpha` false the picture is
-// made opaque (on black) before fitting. Throws if the media can't be read.
+// size on a transparent background, with its filters applied at the fitted
+// size (so a radius in pixels means frame pixels). With `keep_alpha` false
+// the picture is made opaque (on black) first. Throws if the media can't be
+// read.
 Image clip_picture(const Project& project, MediaCache& cache, const Clip& clip,
                    std::int64_t frame, bool keep_alpha = true);
 

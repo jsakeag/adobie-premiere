@@ -2,7 +2,7 @@
 
 A desktop video editor modeled on Adobe Premiere 1.0-2.0 (1991-1992), written in C++17. The core is headless; a thin NanoGUI app shows it. Sister project to `mock-photoshop`. See [CLAUDE.md](CLAUDE.md) for the plan and architecture, [FEATURES.md](FEATURES.md) for the feature list and [STACK.md](STACK.md) for the libraries.
 
-**Status:** milestones 1-4 of 10 are done: importing media, the Project and Clip windows, the Construction window (placing, moving, trimming, cutting and deleting clips on A/B, Super and three audio tracks), the Preview window, saving projects, 24 transitions, the Super track with transparency keys, and rubber-band fades.
+**Status:** milestones 1-5 of 10 are done: importing media, the Project and Clip windows, the Construction window (placing, moving, trimming, cutting and deleting clips on A/B, Super and three audio tracks), the Preview window, saving projects, 24 transitions, the Super track with transparency keys, rubber-band fades, and video and audio filters.
 
 ## Build and test
 
@@ -53,6 +53,10 @@ Test media lives in `tests/fixtures/`; `tests/fixtures/make_fixtures.sh` rebuild
   - **None** (opaque), **Alpha Channel** (the file's own transparency), **Chroma** (drops a chosen colour), **Luminance** (drops dark areas), **Blue Screen** and **Green Screen** (drop pure blue or green), **Multiply** (darkens what's beneath) and **Screen** (lightens it).
   - **Similarity** sets how close to the colour (or how dark) still drops out, **Blend** softens the edge, and **Reverse key** swaps what's kept and dropped.
 - **Rubber bands:** the red line across each Super and sound clip is its opacity or volume, top for 100% and bottom for 0%. Drag the line to add a handle and pull it where you want it; drag a handle to move it (between its neighbours); drag a handle well above or below the track to remove it. Between handles the level changes in a straight line. Handles belong to the clip's source, so they stay with the picture or sound when you trim.
+- **Filters:** select one clip and choose Clip > **Filters...** (Cmd+F). The list on the left is the clip's filters, applied top to bottom; pick one from the menu and press **Add**, or select one and use **Remove**, **Up** and **Down**. Each setting has a **Start** value (the clip's first frame) and an **End** value (its last); in between the value changes steadily, so a filter can fade in, sweep or ramp. The previews show the first and last frames with every filter applied. OK applies the whole list as one undoable step.
+  - Video filters (24): Brightness & Contrast, Levels, Gamma Correction, Hue & Saturation, Color Balance, Tint, Black & White, Invert, Posterize, Threshold, Solarize, Gaussian Blur, Camera Blur, Motion Blur, Sharpen, Emboss, Find Edges, Mosaic, Add Noise (new grain every frame), Ripple, Replicate, Crop (to transparent), Horizontal Flip, Vertical Flip. Sizes in pixels mean pixels of the project's frame.
+  - Sound clips get the audio filters instead: Echo, Pan (sweeps from its start to its end position), Backwards, Fill Left (the left channel in both speakers) and Fill Right. You'll hear them once playback has sound (milestone 6).
+  - A clip's picture and its linked sound have separate filter lists. A razor cut gives both halves the same filters, each running start to end over its own length.
 - **Preview window:** the program at the edit line, at the project's frame size.
 - **Transitions window** (top right): the 24 transitions. Each icon shows the transition on a sample "A" and "B"; hold the mouse over one to watch it play.
   - Dissolves: Cross, Additive, Dither, Non-Additive. Wipes: Wipe, Barn Doors, Band Wipe, Checkerboard, Clock Wipe, Venetian Blinds, Random Blocks, Inset. Irises: Round, Square, Diamond, Cross. Slides: Push, Slide, Split, Center Split, Center Merge, Swap. Plus Zoom and Stretch. (Premiere 1.0 also had 24; which 24 isn't documented anywhere I could find, so these are a plausible set.)

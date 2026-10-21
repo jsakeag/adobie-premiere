@@ -1,5 +1,6 @@
 #include "mpp/renderer.h"
 
+#include <algorithm>
 #include <exception>
 
 #include "mpp/compositing.h"
@@ -11,15 +12,36 @@ double clip_source_position(const Clip& clip, std::int64_t frame) {
   return static_cast<double>(clip.in + (frame - clip.start));
 }
 
+double clip_progress(const Clip& clip, std::int64_t frame) {
+  if (clip.length() <= 1) return 0.0;
+  return std::clamp(static_cast<double>(frame - clip.start) / static_cast<double>(clip.length() - 1),
+                    0.0, 1.0);
+}
+
+Image clip_source(const Project& project, MediaCache& cache, const Clip& clip,
+                  std::int64_t frame, bool keep_alpha) {
+  const ProjectSettings& s = project.settings;
+  const MediaItem* item = project.item(clip.item);
+  if (!item || !item->info.has_video) return {};
+  const std::int64_t index =
+      source_frame(item->info, s.rate, clip_source_position(clip, frame));
+  const Image source = keep_alpha ? cache.frame(item->path, index)
+                                  : flattened(cache.frame(item->path, index));
+  const Point size = fitted_size(source.width(), source.height(), s.width, s.height);
+  return resized(source, size.x, size.y);
+}
+
 Image clip_picture(const Project& project, MediaCache& cache, const Clip& clip,
                    std::int64_t frame, bool keep_alpha) {
   const ProjectSettings& s = project.settings;
-  const MediaItem* item = project.item(clip.item);
-  if (!item || !item->info.has_video) return Image(s.width, s.height);
-  const std::int64_t index =
-      source_frame(item->info, s.rate, clip_source_position(clip, frame));
-  const Image source = cache.frame(item->path, index);
-  return fit_into(keep_alpha ? source : flattened(source), s.width, s.height, kTransparent);
+  Image picture = clip_source(project, cache, clip, frame, keep_alpha);
+  Image out(s.width, s.height, kTransparent);
+  if (picture.empty()) return out;
+  if (!clip.filters.empty()) {
+    picture = apply_video_filters(picture, clip.filters, clip_progress(clip, frame), frame);
+  }
+  out.blit(picture, {(s.width - picture.width()) / 2, (s.height - picture.height()) / 2});
+  return out;
 }
 
 Image track_picture(const Project& project, MediaCache& cache, Track track, std::int64_t frame) {

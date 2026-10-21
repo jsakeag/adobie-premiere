@@ -226,3 +226,25 @@ TEST_CASE("fades and keys are commands", "[timeline][fade]") {
   e.undo();
   CHECK(e.project().clip(id)->key.type == mpp::KeyType::None);
 }
+
+TEST_CASE("filters suit their track and stay in range", "[timeline][filters]") {
+  Editor e = editor_with_media();
+  run<mpp::PlaceClipCommand>(e, 1, Track::VideoA, 0, 0, 30);
+  const int picture = only_clip_on(e, Track::VideoA).id;
+  const int sound = only_clip_on(e, Track::AudioA).id;
+  mpp::FilterInstance blur = mpp::default_instance("gaussian_blur");
+  blur.end = {10};
+  run<mpp::SetFiltersCommand>(e, picture, std::vector<mpp::FilterInstance>{blur, mpp::default_instance("invert")});
+  CHECK(e.project().clip(picture)->filters.size() == 2);
+  CHECK(e.project().clip(sound)->filters.empty());  // the link doesn't share filters
+  CHECK_THROWS(run<mpp::SetFiltersCommand>(e, picture, std::vector<mpp::FilterInstance>{mpp::default_instance("echo")}));
+  CHECK_THROWS(run<mpp::SetFiltersCommand>(e, sound, std::vector<mpp::FilterInstance>{blur}));
+  blur.end = {99};
+  CHECK_THROWS(run<mpp::SetFiltersCommand>(e, picture, std::vector<mpp::FilterInstance>{blur}));
+  CHECK_THROWS(run<mpp::SetFiltersCommand>(e, picture, std::vector<mpp::FilterInstance>{{"invert", {1}, {1}}}));
+  run<mpp::SetFiltersCommand>(e, sound, std::vector<mpp::FilterInstance>{mpp::default_instance("backwards")});
+  CHECK(e.project().clip(sound)->filters.size() == 1);
+  // A razor cut gives both pieces the filters.
+  run<mpp::RazorCommand>(e, picture, 10);
+  for (const mpp::Clip* c : e.project().clips_on(Track::VideoA)) CHECK(c->filters.size() == 2);
+}

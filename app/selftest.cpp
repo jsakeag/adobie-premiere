@@ -10,6 +10,7 @@
 
 #include "app.h"
 #include "clip_window.h"
+#include "filters_window.h"
 #include "frame_view.h"
 #include "menu_bar.h"
 #include "project_window.h"
@@ -359,6 +360,70 @@ int run_selftest(const std::string& out_dir, const std::string& fixtures) {
     shot("22_volume");
     app->toggle_undo();
     check(project().clip_at(mpp::Track::AudioA, 30)->fade.empty(), "undo takes the handle away");
+
+    // Milestone 5: filters.
+    app->new_project();
+    app->import(media("still.png"));
+    app->import(media("counter.mov"));
+    app->place(project().bin[0].id, mpp::Track::VideoA, 0);
+    app->place(project().bin[1].id, mpp::Track::VideoB, 200);
+    const mpp::Clip* still_on_a = project().clip_at(mpp::Track::VideoA, 0);
+    const int filtered = still_on_a ? still_on_a->id : 0;
+    app->draw_all();
+    app->simulate_click(view->point_at(mpp::Track::VideoA, 40));
+    app->menu_bar()->open(3);
+    check(app->menu_bar()->choose("Filters..."), "Clip > Filters... is there for a selected clip");
+    FiltersWindow* filters = app->filters_window();
+    check(filters != nullptr, "and opens the Filters dialog");
+    if (filters) {
+      filters->add("brightness_contrast");
+      filters->set_value(0, false, -100);
+      filters->set_value(0, true, 100);
+      filters->add("invert");
+      filters->move(-1);
+      check(filters->filters().size() == 2 && filters->filters()[0].id == "invert" &&
+                filters->selected() == 0,
+            "Up moves Invert first");
+      filters->remove();
+      filters->add("mosaic");
+      filters->set_value(0, false, 30.4);
+      check(filters->filters()[1].start[0] == 30, "whole-number settings round");
+      app->draw_all();
+      shot("23_filters");
+      filters->ok();
+    }
+    check(app->filters_window() == nullptr, "OK closes the dialog");
+    const mpp::Clip* with_filters = project().clip(filtered);
+    check(with_filters && with_filters->filters.size() == 2 &&
+              with_filters->filters[0].id == "brightness_contrast" &&
+              with_filters->filters[0].end[0] == 100,
+          "the clip has Brightness & Contrast then Mosaic");
+    app->set_edit_line(0);
+    app->draw_all();
+    const mpp::Color dark = app->preview_window()->view()->frame().pixel(300, 120);
+    app->set_edit_line(149);
+    app->draw_all();
+    const mpp::Color bright = app->preview_window()->view()->frame().pixel(300, 120);
+    check(dark.r < 200 && bright.r == 255 && dark.r < bright.r,
+          "Preview shows the brightness ramp from the first frame to the last");
+    shot("24_filtered");
+
+    // A sound clip gets the audio filters.
+    const mpp::Clip* sound_b = project().clip_at(mpp::Track::AudioA, 210);
+    app->select(sound_b ? std::vector<int>{sound_b->id} : std::vector<int>{});
+    app->edit_filters(sound_b ? sound_b->id : 0);
+    if (app->filters_window()) {
+      app->filters_window()->add("backwards");
+      app->filters_window()->add("pan");
+      app->filters_window()->set_value(0, true, 100);
+      shot("25_audio_filters");
+      app->filters_window()->ok();
+    }
+    sound_b = project().clip_at(mpp::Track::AudioA, 210);
+    check(sound_b && sound_b->filters.size() == 2 && sound_b->filters[1].end[0] == 100,
+          "the sound clip has Backwards and a Pan sweep");
+    app->toggle_undo();
+    check(project().clip_at(mpp::Track::AudioA, 210)->filters.empty(), "undo removes them");
   }
   nanogui::shutdown();
   std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "PASSED", failures);

@@ -4,6 +4,7 @@ add_library(mpp_core STATIC
   src/compositing.cpp
   src/editor.cpp
   src/ffmpeg_source.cpp
+  src/filters.cpp
   src/image.cpp
   src/image_io.cpp
   src/keys.cpp

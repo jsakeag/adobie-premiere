@@ -226,6 +226,31 @@ void SetFadeCommand::apply(Project& p) {
   c.fade = std::move(sorted);
 }
 
+void SetFiltersCommand::apply(Project& p) {
+  Clip& c = find_clip(p, clip);
+  for (const FilterInstance& f : filters) {
+    const std::vector<FilterParam>* params = nullptr;
+    if (is_audio_track(c.track)) {
+      if (const AudioFilterDef* def = find_audio_filter(f.id)) params = &def->params;
+    } else if (const FilterDef* def = find_video_filter(f.id)) {
+      params = &def->params;
+    }
+    if (!params) {
+      refuse("'" + f.id + "' isn't a " + (is_audio_track(c.track) ? "sound" : "video") + " filter");
+    }
+    if (f.start.size() != params->size() || f.end.size() != params->size()) {
+      refuse("Wrong number of settings for '" + f.id + "'");
+    }
+    for (std::size_t i = 0; i < params->size(); ++i) {
+      const FilterParam& param = (*params)[i];
+      for (double v : {f.start[i], f.end[i]}) {
+        if (v < param.min || v > param.max) refuse(param.name + " is out of range");
+      }
+    }
+  }
+  c.filters = filters;
+}
+
 void SetKeyCommand::apply(Project& p) {
   Clip& c = find_clip(p, clip);
   if (key.similarity < 0 || key.similarity > 1 || key.blend < 0 || key.blend > 1) {

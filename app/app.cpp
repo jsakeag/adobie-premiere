@@ -11,6 +11,7 @@
 #include <nanogui/opengl.h>
 
 #include "clip_window.h"
+#include "filters_window.h"
 #include "frame_view.h"
 #include "key_window.h"
 #include "mpp/bin_commands.h"
@@ -157,6 +158,7 @@ std::vector<Menu> App::build_menus() {
         selection_.size() == 1 && project().transition(selection_[0]) ? selection_[0] : 0;
     const mpp::Clip* chosen = selection_.size() == 1 ? project().clip(selection_[0]) : nullptr;
     const int super = chosen && chosen->track == mpp::Track::Superimpose ? chosen->id : 0;
+    const int chosen_id = chosen ? chosen->id : 0;
     return std::vector<MenuItem>{
         {"Open in Clip Window", "Return", [this] { open_clip(selected_item_); },
          selected_item_ != 0},
@@ -171,6 +173,7 @@ std::vector<Menu> App::build_menus() {
         {"Transition Settings...", "", [this, transition] { edit_transition(transition); },
          transition != 0},
         {"Transparency...", "", [this, super] { edit_key(super); }, super != 0},
+        {"Filters...", "Cmd+F", [this, chosen_id] { edit_filters(chosen_id); }, chosen_id != 0},
     };
   }});
   menus.push_back({"Windows", [this] {
@@ -674,6 +677,34 @@ void App::open_timeline_clip(int id) {
   }
 }
 
+void App::edit_filters(int id) {
+  const mpp::Clip* clip = project().clip(id);
+  const mpp::MediaItem* item = clip ? project().item(clip->item) : nullptr;
+  if (!item || filters_window_) return;
+  // Pictures of the first and last frames, before filters, to preview on.
+  mpp::Image first, last;
+  const std::int64_t last_frame = clip->end() - 1;
+  if (mpp::is_video_track(clip->track)) {
+    try {
+      first = mpp::clip_source(project(), cache_, *clip, clip->start);
+      last = mpp::clip_source(project(), cache_, *clip, last_frame);
+    } catch (const std::exception& e) {
+      message_ = e.what();
+      return;
+    }
+  }
+  filters_window_ = new FiltersWindow(
+      this, item->name, clip->filters, std::move(first), clip->start, std::move(last), last_frame,
+      [this, id](const std::vector<mpp::FilterInstance>& filters) {
+        run(std::make_unique<mpp::SetFiltersCommand>(id, filters));
+      });
+  filters_window_->set_closed_callback([this] { filters_window_ = nullptr; });
+  perform_layout();
+  layout_widgets();
+  filters_window_->set_position((m_size - filters_window_->size()) / 2);
+  move_window_to_front(filters_window_);
+}
+
 void App::edit_key(int id) {
   const mpp::Clip* clip = project().clip(id);
   if (!clip || transparency_) return;
@@ -849,6 +880,9 @@ bool App::keyboard_event(int key, int scancode, int action, int modifiers) {
       case GLFW_KEY_I: import_dialog(); return true;
       case GLFW_KEY_Z: toggle_undo(); return true;
       case GLFW_KEY_A: select_all_clips(); return true;
+      case GLFW_KEY_F:
+        if (selection_.size() == 1) edit_filters(selection_[0]);
+        return true;
       case GLFW_KEY_Q: confirm_discard([this] { set_visible(false); }); return true;
       default: return false;
     }

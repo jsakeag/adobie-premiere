@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "mpp/filters.h"
 #include "mpp/keys.h"
 #include "mpp/media.h"
 #include "mpp/rate.h"
@@ -82,6 +83,7 @@ struct Clip {
   int link = 0;
   std::vector<FadePoint> fade;  // sorted by position; empty is full level
   TransparencyKey key;          // used on the Super track
+  std::vector<FilterInstance> filters;  // video filters, or audio ones on sound
 
   std::int64_t length() const { return out - in; }
   std::int64_t end() const { return start + length(); }

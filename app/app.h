@@ -21,6 +21,7 @@ class ProjectWindow;
 class SettingsWindow;
 class TransitionSettingsWindow;
 class TransparencyWindow;
+class FiltersWindow;
 class TransitionsWindow;
 namespace nanogui {
 class Label;
@@ -111,6 +112,9 @@ class App : public nanogui::Screen {
   // Opens the Transparency dialog for a Super clip; OK applies it.
   void edit_key(int clip);
   TransparencyWindow* transparency() const { return transparency_; }
+  // Opens the Filters dialog for a clip; OK applies the list.
+  void edit_filters(int clip);
+  FiltersWindow* filters_window() const { return filters_window_; }
   // A double-click on a clip: Transparency for Super, the Clip window
   // otherwise.
   void open_timeline_clip(int clip);
@@ -215,5 +219,6 @@ class App : public nanogui::Screen {
   TransitionsWindow* transitions_ = nullptr;
   TransitionSettingsWindow* transition_settings_ = nullptr;
   TransparencyWindow* transparency_ = nullptr;
+  FiltersWindow* filters_window_ = nullptr;
   nanogui::Label* status_ = nullptr;
 };
