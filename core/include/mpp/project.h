@@ -9,6 +9,7 @@
 #include "mpp/keys.h"
 #include "mpp/media.h"
 #include "mpp/rate.h"
+#include "mpp/title.h"
 #include "mpp/transitions.h"
 
 namespace mpp {
@@ -33,6 +34,9 @@ struct ProjectSettings {
 // A file in the Project window. `in` and `out` are the marks set in the
 // Clip window, in project frames from the start of the source (out is
 // exclusive); placing the item uses that range.
+//
+// A title (2.0) has no file: `title` holds it and it's drawn at the
+// project's frame size whenever it's shown, like a still.
 struct MediaItem {
   int id = 0;
   std::string path;
@@ -40,6 +44,7 @@ struct MediaItem {
   MediaInfo info;
   std::int64_t in = 0;
   std::int64_t out = 0;
+  std::optional<TitleSpec> title;
 };
 
 // The Construction window's tracks, top to bottom. The transition track
@@ -111,6 +116,7 @@ struct Project {
   std::vector<MediaItem> bin;
   std::vector<Clip> clips;  // in no particular order
   std::vector<Transition> transitions;
+  std::vector<int> sequence;  // the Sequence window: bin item ids in order
   // The yellow bar over the ruler: what Preview renders and Export writes.
   std::int64_t work_in = 0;
   std::int64_t work_out = 0;
@@ -142,6 +148,10 @@ std::optional<std::int64_t> source_length(const MediaInfo& info, Rate project_ra
 // it (a still gets `still_frames`).
 MediaItem make_item(const std::string& path, const MediaInfo& info,
                     const ProjectSettings& settings);
+
+// A bin item for a title, lasting `still_frames` when placed.
+MediaItem make_title_item(const TitleSpec& title, const std::string& name,
+                          const ProjectSettings& settings);
 
 // The source frame showing `position` project frames into a source.
 std::int64_t source_frame(const MediaInfo& info, Rate project_rate, double position);

@@ -13,6 +13,15 @@ void RemoveItemCommand::apply(Project& p) {
   p.clips.erase(std::remove_if(p.clips.begin(), p.clips.end(),
                                [this](const Clip& c) { return c.item == id; }),
                 p.clips.end());
+  p.sequence.erase(std::remove(p.sequence.begin(), p.sequence.end(), id), p.sequence.end());
+}
+
+void SetTitleCommand::apply(Project& p) {
+  MediaItem* item = p.item(id);
+  if (!item || !item->title) throw std::invalid_argument("That isn't a title");
+  if (title_name.empty()) throw std::invalid_argument("A title needs a name");
+  item->title = title;
+  item->name = title_name;
 }
 
 void SetSettingsCommand::apply(Project& p) {

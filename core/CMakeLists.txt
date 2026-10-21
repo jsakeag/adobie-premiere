@@ -21,6 +21,7 @@ add_library(mpp_core STATIC
   src/resample.cpp
   src/time_scale.cpp
   src/timeline_commands.cpp
+  src/title.cpp
   src/transitions.cpp
 )
 target_include_directories(mpp_core PUBLIC include)

@@ -58,6 +58,9 @@ class ConstructionView : public nanogui::Widget {
   int zoom_level() const { return zoom_; }
   // One step closer (+1) or farther (-1), keeping the edit line in place.
   void zoom(int steps);
+  // Drops the head-frame thumbnails, so they're drawn again (a title
+  // changed).
+  void forget_thumbnails() { forget_thumbs_ = true; }
   // Scrolls so a frame is visible.
   void reveal(std::int64_t frame);
 
@@ -162,4 +165,5 @@ class ConstructionView : public nanogui::Widget {
   std::int64_t transition_drop_start_ = 0, transition_drop_length_ = 0;
 
   std::map<std::pair<int, std::int64_t>, NvgImage> thumbs_;  // by item and in point
+  bool forget_thumbs_ = false;
 };

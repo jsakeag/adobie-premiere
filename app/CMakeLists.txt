@@ -26,8 +26,10 @@ add_executable(mock_premiere
   menu_bar.cpp
   project_window.cpp
   selftest.cpp
+  sequence_window.cpp
   settings_window.cpp
   timeline_windows.cpp
+  title_window.cpp
   transition_windows.cpp
 )
 target_link_libraries(mock_premiere PRIVATE mpp_core nanogui)

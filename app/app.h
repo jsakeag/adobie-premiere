@@ -23,6 +23,8 @@ class ConstructionWindow;
 class ExportWindow;
 class FullScreenView;
 class PreviewWindow;
+class SequenceWindow;
+class TitleWindow;
 class ProjectWindow;
 class SettingsWindow;
 class TransitionSettingsWindow;
@@ -158,6 +160,18 @@ class App : public nanogui::Screen {
   bool printing() const { return fullscreen_ != nullptr; }
   FullScreenView* fullscreen() const { return fullscreen_; }
 
+  // Titles (2.0). new_title() opens the Title window on a fresh title;
+  // OK adds it to the Project window. edit_title() opens an existing one.
+  void new_title();
+  void edit_title(int item);
+  TitleWindow* title_window() const { return title_window_; }
+
+  // Sequence window (2.0).
+  void set_sequence(std::vector<int> items);
+  void add_to_sequence(int item, int row = -1);  // -1 appends
+  bool place_sequence(const std::string& transition, int overlap);
+  SequenceWindow* sequence_window() const { return sequence_; }
+
   // Project > Settings.
   void open_settings();
   SettingsWindow* settings_window() const { return settings_; }
@@ -215,6 +229,9 @@ class App : public nanogui::Screen {
   void finish_export();
   void end_print();
   void export_frame_dialog();
+  // A double-click in the Project window: the Title window for a title,
+  // the Clip window otherwise.
+  void open_item(int id);
   mpp::Image thumbnail(int id);
   mpp::Image item_thumbnail(int item, std::int64_t position);
   // Brings the windows up to date. Widgets are rebuilt here, outside their
@@ -281,5 +298,8 @@ class App : public nanogui::Screen {
   TransparencyWindow* transparency_ = nullptr;
   FiltersWindow* filters_window_ = nullptr;
   ExportWindow* export_window_ = nullptr;
+  TitleWindow* title_window_ = nullptr;
+  SequenceWindow* sequence_ = nullptr;
+  int titles_made_ = 0;  // for naming new titles
   nanogui::Label* status_ = nullptr;
 };

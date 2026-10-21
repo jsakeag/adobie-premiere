@@ -18,6 +18,61 @@ namespace {
 
 constexpr const char* kFormat = "mock-premiere";
 
+json colour_json(Color c) { return json::array({c.r, c.g, c.b, c.a}); }
+
+Color colour_from(const json& j) {
+  return {j.at(0).get<std::uint8_t>(), j.at(1).get<std::uint8_t>(), j.at(2).get<std::uint8_t>(),
+          j.at(3).get<std::uint8_t>()};
+}
+
+json title_json(const TitleSpec& t) {
+  json shapes = json::array(), texts = json::array();
+  for (const TitleShape& s : t.shapes) {
+    shapes.push_back({{"kind", s.kind == ShapeKind::Oval ? "oval" : "rectangle"},
+                      {"x", s.x}, {"y", s.y}, {"width", s.width}, {"height", s.height},
+                      {"color", colour_json(s.color)}, {"filled", s.filled}, {"line", s.line}});
+  }
+  for (const TitleText& x : t.texts) {
+    texts.push_back({{"text", x.text},
+                     {"font", x.font == TitleFont::Bold ? "bold" : "regular"},
+                     {"size", x.size}, {"color", colour_json(x.color)}, {"x", x.x}, {"y", x.y},
+                     {"align", x.align == TextAlign::Left ? "left" : x.align == TextAlign::Right ? "right" : "center"},
+                     {"shadow", x.shadow}});
+  }
+  return {{"background", colour_json(t.background)}, {"shapes", shapes}, {"texts", texts}};
+}
+
+TitleSpec title_from(const json& j) {
+  TitleSpec t;
+  t.background = colour_from(j.at("background"));
+  for (const json& s : j.at("shapes")) {
+    TitleShape shape;
+    shape.kind = s.at("kind").get<std::string>() == "oval" ? ShapeKind::Oval : ShapeKind::Rectangle;
+    shape.x = s.at("x").get<double>();
+    shape.y = s.at("y").get<double>();
+    shape.width = s.at("width").get<double>();
+    shape.height = s.at("height").get<double>();
+    shape.color = colour_from(s.at("color"));
+    shape.filled = s.at("filled").get<bool>();
+    shape.line = s.at("line").get<double>();
+    t.shapes.push_back(shape);
+  }
+  for (const json& x : j.at("texts")) {
+    TitleText text;
+    text.text = x.at("text").get<std::string>();
+    text.font = x.at("font").get<std::string>() == "bold" ? TitleFont::Bold : TitleFont::Regular;
+    text.size = x.at("size").get<double>();
+    text.color = colour_from(x.at("color"));
+    text.x = x.at("x").get<double>();
+    text.y = x.at("y").get<double>();
+    const std::string align = x.at("align").get<std::string>();
+    text.align = align == "left" ? TextAlign::Left : align == "right" ? TextAlign::Right : TextAlign::Center;
+    text.shadow = x.at("shadow").get<bool>();
+    t.texts.push_back(text);
+  }
+  return t;
+}
+
 json rate_json(const Rate& r) { return json::array({r.num, r.den, r.drop_frame}); }
 
 Rate rate_from(const json& j) {
@@ -75,7 +130,7 @@ std::string encode_project(const Project& p, const std::string& project_dir) {
   json bin = json::array();
   for (const MediaItem& item : p.bin) {
     const MediaInfo& i = item.info;
-    bin.push_back({{"id", item.id},
+    json entry = {{"id", item.id},
                    {"path", item.path},
                    {"relative", relative_to(item.path, project_dir)},
                    {"name", item.name},
@@ -90,7 +145,9 @@ std::string encode_project(const Project& p, const std::string& project_dir) {
                      {"has_video", i.has_video},
                      {"has_audio", i.has_audio},
                      {"sample_rate", i.sample_rate},
-                     {"channels", i.channels}}}});
+                     {"channels", i.channels}}}};
+    if (item.title) entry["title"] = title_json(*item.title);
+    bin.push_back(entry);
   }
   j["bin"] = bin;
   json clips = json::array();
@@ -136,6 +193,7 @@ std::string encode_project(const Project& p, const std::string& project_dir) {
                            {"direction", s.direction}});
   }
   j["transitions"] = transitions;
+  j["sequence"] = p.sequence;
   return j.dump(2);
 }
 
@@ -183,6 +241,7 @@ Project decode_project(const std::string& text, const std::string& project_dir) 
       item.info.has_audio = i.at("has_audio").get<bool>();
       item.info.sample_rate = i.at("sample_rate").get<int>();
       item.info.channels = i.at("channels").get<int>();
+      if (b.contains("title")) item.title = title_from(b.at("title"));
       p.bin.push_back(std::move(item));
     }
     for (const json& c : j.at("clips")) {
@@ -214,6 +273,7 @@ Project decode_project(const std::string& text, const std::string& project_dir) 
       }
       p.clips.push_back(clip);
     }
+    p.sequence = j.value("sequence", std::vector<int>{});
     for (const json& t : j.value("transitions", json::array())) {
       Transition tr;
       tr.id = t.at("id").get<int>();

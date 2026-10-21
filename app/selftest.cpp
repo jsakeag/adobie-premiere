@@ -18,7 +18,9 @@
 #include "menu_bar.h"
 #include "project_window.h"
 #include "mpp/project_file.h"
+#include "sequence_window.h"
 #include "settings_window.h"
+#include "title_window.h"
 #include "timeline_windows.h"
 #include "key_window.h"
 #include "make_windows.h"
@@ -518,6 +520,121 @@ int run_selftest(const std::string& out_dir, const std::string& fixtures) {
     app->stop();
     app->draw_all();
     check(!app->printing(), "Esc ends it");
+
+    // Milestone 7: titles and the Sequence window.
+    app->new_project();
+    app->import(media("counter.mov"));
+    app->import(media("still.png"));
+    app->import(media("h264.mp4"));
+    const int counter_item = project().bin[0].id;
+    const int still_item = project().bin[1].id;
+    const int grey_item = project().bin[2].id;
+    app->menu_bar()->open(0);
+    check(app->menu_bar()->choose("New Title"), "File > New Title");
+    TitleWindow* title = app->title_window();
+    check(title != nullptr && title->title().texts.size() == 1 &&
+              title->selection().kind == TitleWindow::Selection::Kind::Text,
+          "opens the Title window with a text selected");
+    if (title) {
+      title->set_text("Hello");
+      title->add_text("World");
+      title->move_selected_to(0.5, 0.75);
+      title->add_shape(mpp::ShapeKind::Oval);
+      title->move_selected_to(0.15, 0.2);
+      app->draw_all();
+      // Drag "World" up and left on the canvas.
+      app->simulate_drag(title->canvas_point(0.5, 0.75), title->canvas_point(0.4, 0.65));
+      const mpp::TitleText& world = title->title().texts[1];
+      check(title->selection().kind == TitleWindow::Selection::Kind::Text &&
+                title->selection().index == 1 && std::abs(world.x - 0.4) < 0.01 &&
+                std::abs(world.y - 0.65) < 0.01,
+            "dragging a text on the canvas moves it");
+      shot("31_title_window");
+      title->ok();
+    }
+    const mpp::MediaItem* made = project().bin.empty() ? nullptr : &project().bin.back();
+    check(made && made->title && made->name == "Title 1" && made->title->texts.size() == 2 &&
+              made->title->shapes.size() == 1,
+          "OK puts the title in the Project window");
+    const int title_item = made ? made->id : 0;
+
+    // Double-click it to edit it.
+    app->draw_all();
+    app->project_window()->perform_layout(app->nvg_context());
+    app->simulate_click(app->project_window()->row_center(title_item));
+    app->simulate_click(app->project_window()->row_center(title_item), nanogui::MOD_DOUBLE_CLICK);
+    check(app->title_window() != nullptr, "double-clicking a title opens it in the Title window");
+    if (app->title_window()) {
+      app->title_window()->set_name("Opening");
+      app->title_window()->ok();
+    }
+    check(project().item(title_item)->name == "Opening", "the edit renames it");
+    app->toggle_undo();
+    check(project().item(title_item)->name == "Title 1", "and undo puts the name back");
+    app->toggle_undo();
+
+    // Superimposed with its own transparency.
+    app->place(counter_item, mpp::Track::VideoA, 0);
+    app->place(title_item, mpp::Track::Superimpose, 0);
+    mpp::TransparencyKey alpha;
+    alpha.type = mpp::KeyType::Alpha;
+    {
+      const mpp::Clip* super_title = project().clip_at(mpp::Track::Superimpose, 0);
+      if (super_title) {
+        app->select({super_title->id});
+        app->edit_key(super_title->id);
+        if (app->transparency()) {
+          app->transparency()->set_key(alpha);
+          app->transparency()->ok();
+        }
+      }
+    }
+    app->set_edit_line(10);
+    app->draw_all();
+    {
+      const mpp::Image& shown = app->preview_window()->view()->frame();
+      const mpp::Rect words = mpp::text_bounds(project().item(title_item)->title->texts[0], 320, 240);
+      int white = 0, counter_green = 0;
+      for (int y = words.y; y < words.bottom(); ++y) {
+        for (int x = words.x; x < words.right(); ++x) {
+          if (shown.pixel(x, y) == mpp::kWhite) ++white;
+        }
+      }
+      if (shown.pixel(300, 10) == mpp::Color{40, 215, 64, 255}) ++counter_green;
+      check(white > 20 && counter_green == 1, "the title's words show over Video A, which shows around them");
+    }
+    shot("32_title_superimposed");
+
+    // The Sequence window.
+    app->set_edit_line(200);
+    app->menu_bar()->open(5);
+    check(app->menu_bar()->choose("Sequence") && app->sequence_window()->visible(),
+          "Windows > Sequence shows it");
+    app->add_to_sequence(counter_item);
+    app->draw_all();
+    app->project_window()->perform_layout(app->nvg_context());
+    app->simulate_drag(app->project_window()->row_center(grey_item),
+                       app->sequence_window()->absolute_position() + nanogui::Vector2i(150, 60));
+    app->select_item(still_item);
+    app->menu_bar()->open(3);
+    app->menu_bar()->choose("Add to Sequence");
+    check(project().sequence == std::vector<int>{counter_item, grey_item, still_item},
+          "items arrive by Add, by dragging from the Project window, and from the Clip menu");
+    app->draw_all();
+    app->sequence_window()->select(2);
+    app->sequence_window()->move(-1);
+    check(project().sequence == std::vector<int>{counter_item, still_item, grey_item}, "Up reorders");
+    app->sequence_window()->choose("cross_dissolve", 10);
+    app->draw_all();
+    shot("33_sequence");
+    app->sequence_window()->place();
+    check(project().clip_at(mpp::Track::VideoA, 200) && project().clip_at(mpp::Track::VideoB, 260) &&
+              project().clip_at(mpp::Track::VideoA, 420) && project().transitions.size() == 2,
+          "Place lays the sequence out from the edit line, alternating A and B with dissolves");
+    shot("34_sequence_placed");
+    app->toggle_undo();
+    check(project().clips_on(mpp::Track::VideoB).empty() && project().transitions.empty(),
+          "one undo takes it all back");
   }
   nanogui::shutdown();
   std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "PASSED", failures);

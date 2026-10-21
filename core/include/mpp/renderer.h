@@ -12,6 +12,12 @@ namespace mpp {
 // timeline frame.
 double clip_source_position(const Clip& clip, std::int64_t frame);
 
+// An item's picture at a source position (project frames), at its own
+// size: a frame of its file, or a title drawn at the project's frame size.
+// Throws if the media can't be read.
+Image item_picture(const Project& project, MediaCache& cache, const MediaItem& item,
+                   double position);
+
 // How far through a clip a timeline frame is: 0 at its first frame, 1 at
 // its last. Filters blend their start and end values by this.
 double clip_progress(const Clip& clip, std::int64_t frame);

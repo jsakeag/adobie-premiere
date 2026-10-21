@@ -232,7 +232,8 @@ void ProjectWindow::refresh(const mpp::Project& project, int selected) {
     row.detail = detail;
     const auto length = mpp::source_length(info, rate);
     row.duration = length ? mpp::format_timecode(*length, rate) : "Still";
-    row.thumb_key = item.path + "@" + std::to_string(item.in);
+    row.thumb_key = item.title ? "title:" + mpp::title_signature(*item.title)
+                               : item.path + "@" + std::to_string(item.in);
     row.sound_only = !info.has_video;
     rows.push_back(std::move(row));
   }

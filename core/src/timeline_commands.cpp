@@ -54,7 +54,8 @@ void check_clip(const Project& p, const Clip& clip) {
   }
 }
 
-void PlaceClipCommand::apply(Project& p) {
+int place_clip(Project& p, int item, Track track, std::int64_t start, std::int64_t in,
+               std::int64_t out, bool with_sound) {
   const MediaItem* source = p.item(item);
   if (!source) refuse("No such item in the Project window");
   Clip clip;
@@ -77,7 +78,10 @@ void PlaceClipCommand::apply(Project& p) {
     p.clips.push_back(sound);
     check_clip(p, sound);
   }
+  return clip.id;
 }
+
+void PlaceClipCommand::apply(Project& p) { place_clip(p, item, track, start, in, out, with_sound); }
 
 void MoveClipCommand::apply(Project& p) {
   Clip& c = find_clip(p, clip);
@@ -189,7 +193,8 @@ TransitionSpan suggest_transition_span(const Project& p, std::int64_t frame,
   return span;
 }
 
-void AddTransitionCommand::apply(Project& p) {
+int add_transition(Project& p, const std::string& kind, std::int64_t start, std::int64_t length,
+                   const TransitionSettings& settings) {
   Transition t;
   t.id = p.next_id++;
   t.kind = kind;
@@ -198,6 +203,57 @@ void AddTransitionCommand::apply(Project& p) {
   t.settings = settings;
   check_transition(p, t);
   p.transitions.push_back(t);
+  return t.id;
+}
+
+void AddTransitionCommand::apply(Project& p) { add_transition(p, kind, start, length, settings); }
+
+void SetSequenceCommand::apply(Project& p) {
+  for (int id : items) {
+    if (!p.item(id)) refuse("No such item in the Project window");
+  }
+  p.sequence = items;
+}
+
+std::int64_t sequence_length(const Project& p, const std::vector<int>& items, bool transitions,
+                             std::int64_t overlap) {
+  std::int64_t total = 0;
+  for (std::size_t i = 0; i < items.size(); ++i) {
+    const MediaItem* item = p.item(items[i]);
+    if (!item) continue;
+    total += item->out - item->in;
+    if (transitions && i > 0) total -= overlap;
+  }
+  return std::max<std::int64_t>(0, total);
+}
+
+void BuildSequenceCommand::apply(Project& p) {
+  if (items.empty()) refuse("The Sequence window is empty");
+  const bool overlapping = !transition.empty();
+  if (overlapping && overlap < 1) refuse("Transitions need an overlap of at least one frame");
+  std::int64_t at = start;
+  bool on_a = true;
+  std::int64_t previous = 0;  // the last clip's length
+  for (std::size_t i = 0; i < items.size(); ++i) {
+    const MediaItem* item = p.item(items[i]);
+    if (!item) refuse("No such item in the Project window");
+    if (!item->info.has_video) refuse(item->name + " has no picture for the Sequence");
+    const std::int64_t length = item->out - item->in;
+    if (overlapping && i > 0) {
+      if (length <= overlap || previous <= overlap) {
+        refuse("Every clip must be longer than the overlap");
+      }
+      at -= overlap;
+      // From the clip going out to this one: A to B when this one is on B.
+      TransitionSettings settings;
+      settings.b_to_a = on_a;
+      add_transition(p, transition, at, overlap, settings);
+    }
+    place_clip(p, items[i], on_a ? Track::VideoA : Track::VideoB, at, item->in, item->out, true);
+    at += length;
+    previous = length;
+    if (overlapping) on_a = !on_a;
+  }
 }
 
 void SetTransitionSpanCommand::apply(Project& p) {

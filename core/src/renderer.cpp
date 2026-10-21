@@ -5,11 +5,19 @@
 
 #include "mpp/compositing.h"
 #include "mpp/resample.h"
+#include "mpp/title.h"
 
 namespace mpp {
 
 double clip_source_position(const Clip& clip, std::int64_t frame) {
   return static_cast<double>(clip.in + (frame - clip.start));
+}
+
+Image item_picture(const Project& project, MediaCache& cache, const MediaItem& item,
+                   double position) {
+  const ProjectSettings& s = project.settings;
+  if (item.title) return render_title(*item.title, s.width, s.height);
+  return cache.frame(item.path, source_frame(item.info, s.rate, position));
 }
 
 double clip_progress(const Clip& clip, std::int64_t frame) {
@@ -23,10 +31,8 @@ Image clip_source(const Project& project, MediaCache& cache, const Clip& clip,
   const ProjectSettings& s = project.settings;
   const MediaItem* item = project.item(clip.item);
   if (!item || !item->info.has_video) return {};
-  const std::int64_t index =
-      source_frame(item->info, s.rate, clip_source_position(clip, frame));
-  const Image source = keep_alpha ? cache.frame(item->path, index)
-                                  : flattened(cache.frame(item->path, index));
+  const Image picture = item_picture(project, cache, *item, clip_source_position(clip, frame));
+  const Image source = keep_alpha ? picture : flattened(picture);
   const Point size = fitted_size(source.width(), source.height(), s.width, s.height);
   return resized(source, size.x, size.y);
 }

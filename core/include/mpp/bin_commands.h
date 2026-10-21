@@ -61,6 +61,20 @@ class SetItemMarksCommand : public Command {
   }
 };
 
+// The Title window's OK on an existing title: its contents and name.
+class SetTitleCommand : public Command {
+ public:
+  SetTitleCommand(int id, TitleSpec title, std::string title_name)
+      : id(id), title(std::move(title)), title_name(std::move(title_name)) {}
+  std::string name() const override { return "Edit Title"; }
+  const int id;
+  const TitleSpec title;
+  const std::string title_name;
+
+ protected:
+  void apply(Project& p) override;
+};
+
 // Changes the output format. Marks, clips and the work area are in project
 // frames, so a new frame rate rescales them to keep their times.
 class SetSettingsCommand : public Command {

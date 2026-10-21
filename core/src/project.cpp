@@ -129,6 +129,20 @@ MediaItem make_item(const std::string& path, const MediaInfo& info,
   return item;
 }
 
+MediaItem make_title_item(const TitleSpec& title, const std::string& name,
+                          const ProjectSettings& settings) {
+  MediaItem item;
+  item.name = name;
+  item.info.kind = MediaKind::Title;
+  item.info.has_video = true;
+  item.info.width = settings.width;
+  item.info.height = settings.height;
+  item.in = 0;
+  item.out = settings.still_frames;
+  item.title = title;
+  return item;
+}
+
 std::int64_t source_frame(const MediaInfo& info, Rate project_rate, double position) {
   if (info.is_still()) return 0;
   const std::int64_t index = info.rate.frame_at(position * project_rate.den / project_rate.num);

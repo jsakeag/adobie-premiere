@@ -16,6 +16,7 @@
 #include "key_window.h"
 #include "make_windows.h"
 #include "mpp/audio_mixer.h"
+#include "mpp/compositing.h"
 #include "mpp/bin_commands.h"
 #include "mpp/image_io.h"
 #include "mpp/project_file.h"
@@ -24,7 +25,9 @@
 #include "mpp/time_scale.h"
 #include "mpp/timeline_commands.h"
 #include "project_window.h"
+#include "sequence_window.h"
 #include "settings_window.h"
+#include "title_window.h"
 #include "timeline_windows.h"
 #include "transition_windows.h"
 
@@ -55,7 +58,7 @@ App::App() : nanogui::Screen(nanogui::Vector2i(1440, 900), "Mock Premiere") {
     focus_ = Focus::Project;
     select_item(id);
   };
-  bin.open = [this](int id) { open_clip(id); };
+  bin.open = [this](int id) { open_item(id); };
   bin.clear = [this] {
     focus_ = Focus::Project;
     clear_selected();
@@ -108,12 +111,21 @@ App::App() : nanogui::Screen(nanogui::Vector2i(1440, 900), "Mock Premiere") {
         drag_transition(kind, at, released);
       });
 
+  SequenceWindowActions sequence;
+  sequence.set = [this](std::vector<int> items) { set_sequence(std::move(items)); };
+  sequence.add_selected = [this] { add_to_sequence(selected_item_); };
+  sequence.place = [this](const std::string& t, int overlap) { place_sequence(t, overlap); };
+  sequence.thumbnail = [this](int id) { return thumbnail(id); };
+  sequence_ = new SequenceWindow(this, std::move(sequence));
+  sequence_->set_visible(false);
+
   status_ = new nanogui::Label(this, "");
   const int top = MenuBar::kHeight + kMargin;
   project_window_->set_position({kMargin, top});
   clip_window_->set_position({440, top});
   preview_->set_position({790, top});
   transitions_->set_position({1150, top});
+  sequence_->set_position({1080, top + 90});
   layout_widgets();
   set_project(mpp::Project(), "Untitled", "");
 }
@@ -129,6 +141,7 @@ std::vector<Menu> App::build_menus() {
         {"Save As...", "Cmd+Shift+S", [this] { save_as_dialog(); }},
         {"", "", nullptr},
         {"Import...", "Cmd+I", [this] { import_dialog(); }},
+        {"New Title", "Cmd+T", [this] { new_title(); }},
         {"", "", nullptr},
         {"Quit", "Cmd+Q", [this] { confirm_discard([this] { set_visible(false); }); }},
     };
@@ -168,6 +181,9 @@ std::vector<Menu> App::build_menus() {
         {"Open in Clip Window", "Return", [this] { open_clip(selected_item_); },
          selected_item_ != 0},
         {"Place at Edit Line", "P", [this] { place_at_edit_line(); }, open},
+        {"Add to Sequence", "", [this] { add_to_sequence(selected_item_); }, selected_item_ != 0},
+        {"Edit Title...", "", [this] { edit_title(selected_item_); },
+         project().item(selected_item_) && project().item(selected_item_)->title},
         {"", "", nullptr},
         {"Play / Stop", "Space", [this] { clip_toggle_play(); }, open},
         {"Mark In", "I", [this] { clip_mark_in(); }, open},
@@ -207,6 +223,7 @@ std::vector<Menu> App::build_menus() {
         {"Preview", "", show(preview_), true, preview_->visible()},
         {"Construction", "", show(construction_), true, construction_->visible()},
         {"Transitions", "", show(transitions_), true, transitions_->visible()},
+        {"Sequence", "", show(sequence_), true, sequence_->visible()},
     };
   }});
   return menus;
@@ -417,6 +434,15 @@ void App::drag_item(int id, nanogui::Vector2i at, bool released) {
   if (!item) {
     view->show_drop(std::nullopt, 0);
     return;
+  }
+  // Over the Sequence window, it goes into the sequence there.
+  if (sequence_->visible()) {
+    const int row = sequence_->drop_row(at);
+    if (row >= 0) {
+      view->show_drop(std::nullopt, 0);
+      if (released) add_to_sequence(id, row);
+      return;
+    }
   }
   const std::int64_t length = item->out - item->in;
   const auto target =
@@ -971,6 +997,88 @@ void App::edit_key(int id) {
   move_window_to_front(transparency_);
 }
 
+void App::open_item(int id) {
+  const mpp::MediaItem* item = project().item(id);
+  if (item && item->title) {
+    selected_item_ = id;
+    edit_title(id);
+  } else {
+    open_clip(id);
+  }
+}
+
+void App::new_title() {
+  if (title_window_) return;
+  mpp::TitleSpec spec;
+  mpp::TitleText words;
+  words.text = "Title";
+  spec.texts.push_back(words);
+  const std::string name = "Title " + std::to_string(++titles_made_);
+  const mpp::ProjectSettings& s = project().settings;
+  title_window_ = new TitleWindow(this, spec, name, s.width, s.height,
+                                  [this](const mpp::TitleSpec& title, const std::string& n) {
+    if (run(std::make_unique<mpp::AddItemCommand>(mpp::make_title_item(title, n, project().settings)))) {
+      selected_item_ = project().bin.back().id;
+      message_ = "Made " + n;
+    }
+  });
+  title_window_->set_closed_callback([this] { title_window_ = nullptr; });
+  perform_layout();
+  layout_widgets();
+  title_window_->set_position((m_size - title_window_->size()) / 2);
+  move_window_to_front(title_window_);
+}
+
+void App::edit_title(int id) {
+  const mpp::MediaItem* item = project().item(id);
+  if (!item || !item->title || title_window_) return;
+  const mpp::ProjectSettings& s = project().settings;
+  title_window_ = new TitleWindow(this, *item->title, item->name, s.width, s.height,
+                                  [this, id](const mpp::TitleSpec& title, const std::string& n) {
+    if (run(std::make_unique<mpp::SetTitleCommand>(id, title, n))) {
+      construction_->view()->forget_thumbnails();
+    }
+  });
+  title_window_->set_closed_callback([this] { title_window_ = nullptr; });
+  perform_layout();
+  layout_widgets();
+  title_window_->set_position((m_size - title_window_->size()) / 2);
+  move_window_to_front(title_window_);
+}
+
+void App::set_sequence(std::vector<int> items) {
+  run(std::make_unique<mpp::SetSequenceCommand>(std::move(items)));
+}
+
+void App::add_to_sequence(int item, int row) {
+  if (!project().item(item)) return;
+  std::vector<int> items = project().sequence;
+  const auto at = row < 0 || row > static_cast<int>(items.size()) ? items.end() : items.begin() + row;
+  items.insert(at, item);
+  if (run(std::make_unique<mpp::SetSequenceCommand>(std::move(items)))) {
+    sequence_->set_visible(true);
+    move_window_to_front(sequence_);
+  }
+}
+
+bool App::place_sequence(const std::string& transition, int overlap) {
+  const int first_new = project().next_id;
+  if (!run(std::make_unique<mpp::BuildSequenceCommand>(project().sequence, edit_line_, transition,
+                                                       overlap))) {
+    return false;
+  }
+  selection_.clear();
+  for (const mpp::Clip& c : project().clips) {
+    if (c.id >= first_new) selection_.push_back(c.id);
+  }
+  for (const mpp::Transition& t : project().transitions) {
+    if (t.id >= first_new) selection_.push_back(t.id);
+  }
+  message_ = "Placed the sequence";
+  set_edit_line(project().duration());
+  return true;
+}
+
 void App::set_tool(TimelineTool tool) {
   tool_ = tool;
   // Now rather than on the next draw, so a click right after uses it.
@@ -1010,9 +1118,8 @@ mpp::Image App::item_thumbnail(int id, std::int64_t position) {
   const mpp::MediaItem* item = project().item(id);
   if (!item || !item->info.has_video) return {};
   try {
-    const mpp::Image frame = cache_.frame(
-        item->path,
-        mpp::source_frame(item->info, project().settings.rate, static_cast<double>(position)));
+    const mpp::Image frame =
+        mpp::flattened(mpp::item_picture(project(), cache_, *item, static_cast<double>(position)));
     const mpp::Point size = mpp::fitted_size(frame.width(), frame.height(), 48, 36);
     return mpp::resized(frame, size.x, size.y);
   } catch (const std::exception&) {
@@ -1045,6 +1152,7 @@ void App::refresh() {
     perform_layout();
     layout_widgets();
   }
+  sequence_->refresh(project());
   show_clip();
   show_timeline();
 }
@@ -1067,8 +1175,7 @@ void App::show_clip() {
       clip_shown_item_ = item->id;
       clip_shown_pos_ = clip_pos_;
       try {
-        frame = cache_.frame(
-            item->path, mpp::source_frame(item->info, state.rate, static_cast<double>(clip_pos_)));
+        frame = mpp::item_picture(project(), cache_, *item, static_cast<double>(clip_pos_));
       } catch (const std::exception& e) {
         message_ = e.what();
       }
@@ -1141,6 +1248,7 @@ bool App::keyboard_event(int key, int scancode, int action, int modifiers) {
         return true;
       case GLFW_KEY_I: import_dialog(); return true;
       case GLFW_KEY_M: open_export_dialog(); return true;
+      case GLFW_KEY_T: new_title(); return true;
       case GLFW_KEY_Z: toggle_undo(); return true;
       case GLFW_KEY_A: select_all_clips(); return true;
       case GLFW_KEY_F:

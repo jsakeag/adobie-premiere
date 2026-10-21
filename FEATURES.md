@@ -72,14 +72,14 @@ Track layout follows Windows 1.0, which is the only documented early layout ⚠�
 ## Milestone 2: Premiere 2.0 additions
 
 ### New windows
-- [ ] **Sequence window**: arrange clips in a simple ordered list for a rough cut, then send them to the Construction window ✅ [2.0]
-- [ ] **Title window**: create text titles to use as clips ✅ [2.0]
+- [x] **Sequence window**: arrange clips in a simple ordered list for a rough cut, then send them to the Construction window ✅ [2.0]
+- [x] **Title window**: create text titles to use as clips ✅ [2.0]
 - [ ] **Capture window**: record from a camera or microphone 🔁 (originally QuickTime video and audio capture ✅ [2.0])
 
 ### Titles
-- [ ] Text in a chosen font, size, color and alignment ⚠️
-- [ ] Simple shapes and a background color or a transparent background ⚠️
-- [ ] Import text and graphics from vector files 🔁 (originally imported from Illustrator ✅ [2.0])
+- [x] Text in a chosen font, size, color and alignment ⚠️ (Roboto Regular and Bold, with an optional shadow)
+- [x] Simple shapes and a background color or a transparent background ⚠️ (rectangles and ovals, filled or outlined)
+- [ ] Import text and graphics from vector files 🔁 (originally imported from Illustrator ✅ [2.0]) *Not built.*
 
 ### Motion
 - [ ] Animate a clip's position along a path made of keyframe points ✅ [2.0]

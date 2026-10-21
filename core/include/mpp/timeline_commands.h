@@ -189,6 +189,50 @@ class SetWorkAreaCommand : public Command {
   void apply(Project& p) override;
 };
 
+// The Sequence window's list: bin item ids in order (an item can appear
+// more than once).
+class SetSequenceCommand : public Command {
+ public:
+  explicit SetSequenceCommand(std::vector<int> items) : items(std::move(items)) {}
+  std::string name() const override { return "Sequence"; }
+  const std::vector<int> items;
+
+ protected:
+  void apply(Project& p) override;
+};
+
+// Lays the Sequence window's items out from `start`, each with its marks.
+// With no transition they go end to end on Video A. With one, they
+// alternate between Video A and Video B, each starting `overlap` frames
+// before the last one ends, with the transition over every overlap. Sound
+// goes on the free audio tracks as when placing by hand. All or nothing:
+// anything in the way refuses the whole lot.
+class BuildSequenceCommand : public Command {
+ public:
+  BuildSequenceCommand(std::vector<int> items, std::int64_t start, std::string transition,
+                       std::int64_t overlap)
+      : items(std::move(items)), start(start), transition(std::move(transition)), overlap(overlap) {}
+  std::string name() const override { return "Place Sequence"; }
+  const std::vector<int> items;
+  const std::int64_t start;
+  const std::string transition;  // a TransitionDef id, or empty for cuts
+  const std::int64_t overlap;
+
+ protected:
+  void apply(Project& p) override;
+};
+
+// How long the built sequence runs.
+std::int64_t sequence_length(const Project& p, const std::vector<int>& items, bool transitions,
+                             std::int64_t overlap);
+
+// The work of PlaceClipCommand and AddTransitionCommand, for commands that
+// do several at once. Return the new id; throw std::invalid_argument.
+int place_clip(Project& p, int item, Track track, std::int64_t start, std::int64_t in,
+               std::int64_t out, bool with_sound);
+int add_transition(Project& p, const std::string& kind, std::int64_t start, std::int64_t length,
+                   const TransitionSettings& settings);
+
 // Where a transition dropped at `frame` should go: over the overlap of the
 // Video A and Video B clips there if both have one (pointing from the one
 // that ends first to the other), otherwise `default_length` frames from

@@ -604,7 +604,8 @@ bool ConstructionView::scroll_event(const Vector2i&, const nanogui::Vector2f& re
 }
 
 void ConstructionView::draw(NVGcontext* ctx) {
-  if (thumbs_.size() > kMaxThumbs) {
+  if (thumbs_.size() > kMaxThumbs || forget_thumbs_) {
+    forget_thumbs_ = false;
     for (auto& [key, image] : thumbs_) image.release(ctx);
     thumbs_.clear();
   }

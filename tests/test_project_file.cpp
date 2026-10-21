@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "mpp/editor.h"
+#include "mpp/bin_commands.h"
 #include "mpp/project_file.h"
 #include "mpp/timeline_commands.h"
 #include "project_fixtures.h"
@@ -46,6 +47,20 @@ mpp::Project sample() {
   e.execute(std::make_unique<mpp::SetFiltersCommand>(
       clip, std::vector<mpp::FilterInstance>{{"ripple", {1, 20, 0}, {12.5, 40, 360}},
                                              mpp::default_instance("invert")}));
+  mpp::TitleSpec title;
+  title.background = {1, 2, 3, 4};
+  mpp::TitleText words;
+  words.text = "Héllo\nthere";
+  words.font = mpp::TitleFont::Regular;
+  words.align = mpp::TextAlign::Right;
+  words.color = {9, 8, 7, 6};
+  title.texts.push_back(words);
+  mpp::TitleShape oval;
+  oval.kind = mpp::ShapeKind::Oval;
+  oval.filled = false;
+  title.shapes.push_back(oval);
+  e.execute(std::make_unique<mpp::AddItemCommand>(mpp::make_title_item(title, "Words", s)));
+  e.execute(std::make_unique<mpp::SetSequenceCommand>(std::vector<int>{2, 1, 2}));
   return e.project();
 }
 
@@ -57,7 +72,7 @@ void check_same(const mpp::Project& a, const mpp::Project& b) {
   REQUIRE(a.bin.size() == b.bin.size());
   for (std::size_t i = 0; i < a.bin.size(); ++i) {
     CHECK(a.bin[i].id == b.bin[i].id);
-    CHECK(fs::equivalent(a.bin[i].path, b.bin[i].path));
+    if (!a.bin[i].title) CHECK(fs::equivalent(a.bin[i].path, b.bin[i].path));
     CHECK(a.bin[i].name == b.bin[i].name);
     CHECK(a.bin[i].in == b.bin[i].in);
     CHECK(a.bin[i].out == b.bin[i].out);
@@ -65,6 +80,7 @@ void check_same(const mpp::Project& a, const mpp::Project& b) {
     CHECK(a.bin[i].info.rate == b.bin[i].info.rate);
     CHECK(a.bin[i].info.frames == b.bin[i].info.frames);
     CHECK(a.bin[i].info.has_audio == b.bin[i].info.has_audio);
+    CHECK(a.bin[i].title == b.bin[i].title);
   }
   REQUIRE(a.clips.size() == b.clips.size());
   for (std::size_t i = 0; i < a.clips.size(); ++i) {
@@ -78,6 +94,7 @@ void check_same(const mpp::Project& a, const mpp::Project& b) {
     CHECK(a.clips[i].key == b.clips[i].key);
     CHECK(a.clips[i].filters == b.clips[i].filters);
   }
+  CHECK(a.sequence == b.sequence);
   REQUIRE(a.transitions.size() == b.transitions.size());
   for (std::size_t i = 0; i < a.transitions.size(); ++i) {
     CHECK(a.transitions[i].id == b.transitions[i].id);
