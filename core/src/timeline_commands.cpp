@@ -215,6 +215,25 @@ void SetTransitionSettingsCommand::apply(Project& p) {
   check_transition(p, *t);
 }
 
+void SetFadeCommand::apply(Project& p) {
+  Clip& c = find_clip(p, clip);
+  std::vector<FadePoint> sorted = fade;
+  std::stable_sort(sorted.begin(), sorted.end(),
+                   [](const FadePoint& a, const FadePoint& b) { return a.position < b.position; });
+  for (const FadePoint& f : sorted) {
+    if (f.level < 0.0 || f.level > 1.0) refuse("Fade levels run from 0 to 100%");
+  }
+  c.fade = std::move(sorted);
+}
+
+void SetKeyCommand::apply(Project& p) {
+  Clip& c = find_clip(p, clip);
+  if (key.similarity < 0 || key.similarity > 1 || key.blend < 0 || key.blend > 1) {
+    refuse("Similarity and blend run from 0 to 100%");
+  }
+  c.key = key;
+}
+
 void SetWorkAreaCommand::apply(Project& p) {
   if (in < 0 || out <= in) refuse("The work area must cover at least one frame");
   p.work_in = in;

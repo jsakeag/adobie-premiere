@@ -238,6 +238,52 @@ Vector2i ConstructionView::transition_point(std::int64_t frame) const {
                   row_top(Row::Transition) + row_height(Row::Transition) / 2);
 }
 
+float ConstructionView::fade_y(Track track, double level) const {
+  const Row row = row_of(track);
+  const float top = row_top(row) + 5.0f, bottom = row_top(row) + row_height(row) - 5.0f;
+  return bottom - static_cast<float>(level) * (bottom - top);
+}
+
+double ConstructionView::fade_level_at(Track track, int local_y) const {
+  const Row row = row_of(track);
+  const double top = row_top(row) + 5.0, bottom = row_top(row) + row_height(row) - 5.0;
+  return std::clamp((bottom - local_y) / (bottom - top), 0.0, 1.0);
+}
+
+float ConstructionView::fade_x(const Clip& clip, double position) const {
+  return local_x_of(clip.start + (position - clip.in));
+}
+
+Vector2i ConstructionView::fade_point(Track track, std::int64_t frame, double level) const {
+  return absolute_position() + Vector2i(static_cast<int>(std::lround(local_x_of(frame + 0.25))),
+                                        static_cast<int>(std::lround(fade_y(track, level))));
+}
+
+bool ConstructionView::press_fade(const Clip& clip, const Vector2i& local) {
+  if (!has_fade_band(clip.track)) return false;
+  drag_fade_ = clip.fade;
+  // On a handle: drag it.
+  for (std::size_t i = 0; i < drag_fade_.size(); ++i) {
+    const float hx = fade_x(clip, drag_fade_[i].position);
+    const float hy = fade_y(clip.track, drag_fade_[i].level);
+    if (std::abs(local.x() - hx) <= 5 && std::abs(local.y() - hy) <= 5) {
+      fade_index_ = i;
+      return true;
+    }
+  }
+  // On the line: add a handle there and drag it.
+  const double position =
+      std::clamp(clip.in + (timeline_x(local.x()) / scale_.px_per_frame + scale_.scroll - clip.start),
+                 static_cast<double>(clip.in), static_cast<double>(clip.out));
+  const double level = mpp::fade_level(clip.fade, position);
+  if (std::abs(local.y() - fade_y(clip.track, level)) > 4) return false;
+  auto at = std::upper_bound(drag_fade_.begin(), drag_fade_.end(), position,
+                             [](double p, const mpp::FadePoint& f) { return p < f.position; });
+  fade_index_ = static_cast<std::size_t>(at - drag_fade_.begin());
+  drag_fade_.insert(at, {position, level});
+  return true;
+}
+
 Vector2i ConstructionView::ruler_point(std::int64_t frame) const {
   return absolute_position() + Vector2i(static_cast<int>(std::lround(local_x_of(frame + 0.5))),
                                         kWorkBarHeight + kRulerHeight / 2);
@@ -306,6 +352,10 @@ bool ConstructionView::mouse_button_event(const Vector2i& p, int button, bool do
       if (actions_.select) actions_.select({});
       return true;
     }
+    if (modifiers & nanogui::MOD_DOUBLE_CLICK) {
+      if (actions_.open_clip) actions_.open_clip(h.clip->id);
+      return true;
+    }
     if (tool_ == TimelineTool::Razor) {
       const std::int64_t frame = mpp::snap(scale_.boundary_at(x),
                                            {edit_line_}, snap_tolerance());
@@ -327,6 +377,13 @@ bool ConstructionView::mouse_button_event(const Vector2i& p, int button, bool do
       return true;
     }
     if (!was_selected && actions_.select) actions_.select({h.clip->id});
+    if (!h.head && !h.tail && press_fade(*h.clip, local)) {
+      drag_clip_ = h.clip->id;
+      drag_track_ = h.clip->track;
+      fade_remove_ = false;
+      drag_ = Drag::Fade;
+      return true;
+    }
     drag_clip_ = h.clip->id;
     drag_track_ = h.clip->track;
     drag_start_ = h.clip->start;
@@ -356,6 +413,13 @@ bool ConstructionView::mouse_button_event(const Vector2i& p, int button, bool do
       if (moved_ && clip && (drag_start_ != clip->start || drag_track_ != clip->track) &&
           actions_.move) {
         actions_.move(drag_clip_, drag_track_, drag_start_);
+      }
+      break;
+    case Drag::Fade:
+      if (clip && actions_.set_fade) {
+        std::vector<mpp::FadePoint> fade = drag_fade_;
+        if (fade_remove_) fade.erase(fade.begin() + static_cast<std::ptrdiff_t>(fade_index_));
+        if (fade != clip->fade) actions_.set_fade(drag_clip_, fade);
       }
       break;
     case Drag::TransitionMove:
@@ -432,6 +496,21 @@ bool ConstructionView::mouse_drag_event(const Vector2i& p, const Vector2i& rel, 
       const std::int64_t start =
           std::max<std::int64_t>(0, boundary - static_cast<std::int64_t>(grab_offset_));
       drag_start_ = std::max<std::int64_t>(0, mpp::snap_span(start, clip->length(), points, tolerance));
+      break;
+    }
+    case Drag::Fade: {
+      const Clip* clip = project_->clip(drag_clip_);
+      if (!clip || fade_index_ >= drag_fade_.size()) break;
+      // Between its neighbours, within the clip; off the track removes it.
+      const double lo = fade_index_ > 0 ? drag_fade_[fade_index_ - 1].position : clip->in;
+      const double hi = fade_index_ + 1 < drag_fade_.size() ? drag_fade_[fade_index_ + 1].position
+                                                            : clip->out;
+      const double position =
+          clip->in + (x / scale_.px_per_frame + scale_.scroll - clip->start);
+      drag_fade_[fade_index_].position = std::clamp(position, lo, hi);
+      drag_fade_[fade_index_].level = fade_level_at(clip->track, local.y());
+      const Row row = row_of(clip->track);
+      fade_remove_ = local.y() < row_top(row) - 20 || local.y() > row_top(row) + row_height(row) + 20;
       break;
     }
     case Drag::TransitionMove:
@@ -671,6 +750,13 @@ void ConstructionView::draw_tracks(NVGcontext* ctx) {
   for (const Clip& c : project_->clips) {
     const bool selected = is_selected(c.id);
     const bool ghosted = dragging_clip && moved_ && c.id == drag_clip_;
+    if (drag_ == Drag::Fade && c.id == drag_clip_) {
+      Clip shown = c;
+      shown.fade = drag_fade_;
+      if (fade_remove_) shown.fade.erase(shown.fade.begin() + static_cast<std::ptrdiff_t>(fade_index_));
+      draw_clip(ctx, shown, c.start, c.track, 1.0f, selected);
+      continue;
+    }
     draw_clip(ctx, c, c.start, c.track, ghosted ? 0.35f : 1.0f, selected);
   }
   if (dragging_clip && moved_) {
@@ -752,6 +838,33 @@ void ConstructionView::draw_clip(NVGcontext* ctx, const Clip& clip, std::int64_t
     nvgTextAlign(ctx, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
     nvgFillColor(ctx, nvgRGBAf(1, 1, 1, alpha));
     nvgText(ctx, text_x, y + 3, item->name.c_str(), nullptr);
+  }
+  if (has_fade_band(track)) {
+    // The rubber band, through its handles, across the clip.
+    Clip placed = clip;
+    placed.start = start;
+    nvgBeginPath(ctx);
+    nvgMoveTo(ctx, x0, fade_y(track, mpp::fade_level(clip.fade, static_cast<double>(clip.in))));
+    for (const mpp::FadePoint& f : clip.fade) {
+      if (f.position > clip.in && f.position < clip.out) {
+        nvgLineTo(ctx, fade_x(placed, f.position), fade_y(track, f.level));
+      }
+    }
+    nvgLineTo(ctx, x1, fade_y(track, mpp::fade_level(clip.fade, static_cast<double>(clip.out))));
+    nvgStrokeColor(ctx, nvgRGBAf(1.0f, 0.35f, 0.3f, alpha));
+    nvgStrokeWidth(ctx, 1.5f);
+    nvgStroke(ctx);
+    for (const mpp::FadePoint& f : clip.fade) {
+      if (f.position < clip.in || f.position > clip.out) continue;
+      const float hx = fade_x(placed, f.position), hy = fade_y(track, f.level);
+      nvgBeginPath(ctx);
+      nvgRect(ctx, hx - 3, hy - 3, 6, 6);
+      nvgFillColor(ctx, nvgRGBAf(1, 1, 1, alpha));
+      nvgFill(ctx);
+      nvgStrokeColor(ctx, nvgRGBAf(0.8f, 0.2f, 0.2f, alpha));
+      nvgStrokeWidth(ctx, 1.0f);
+      nvgStroke(ctx);
+    }
   }
   nvgRestore(ctx);
 }

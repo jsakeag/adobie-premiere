@@ -39,6 +39,13 @@ Track track_from(const std::string& name) {
   throw std::runtime_error("Unknown track '" + name + "'");
 }
 
+KeyType key_from(const std::string& name) {
+  for (const auto& [type, key] : key_types()) {
+    if (name == key) return type;
+  }
+  throw std::runtime_error("Unknown transparency '" + name + "'");
+}
+
 std::string relative_to(const std::string& path, const std::string& dir) {
   if (dir.empty()) return "";
   std::error_code ec;
@@ -88,13 +95,23 @@ std::string encode_project(const Project& p, const std::string& project_dir) {
   j["bin"] = bin;
   json clips = json::array();
   for (const Clip& c : p.clips) {
+    json fade = json::array();
+    for (const FadePoint& f : c.fade) fade.push_back(json::array({f.position, f.level}));
+    const TransparencyKey& k = c.key;
     clips.push_back({{"id", c.id},
                      {"item", c.item},
                      {"track", track_name(c.track)},
                      {"start", c.start},
                      {"in", c.in},
                      {"out", c.out},
-                     {"link", c.link}});
+                     {"link", c.link},
+                     {"fade", fade},
+                     {"key",
+                      {{"type", key_name(k.type)},
+                       {"color", json::array({k.color.r, k.color.g, k.color.b})},
+                       {"similarity", k.similarity},
+                       {"blend", k.blend},
+                       {"reverse", k.reverse}}}});
   }
   j["clips"] = clips;
   json transitions = json::array();
@@ -172,6 +189,19 @@ Project decode_project(const std::string& text, const std::string& project_dir) 
       clip.in = c.at("in").get<std::int64_t>();
       clip.out = c.at("out").get<std::int64_t>();
       clip.link = c.at("link").get<int>();
+      for (const json& f : c.value("fade", json::array())) {
+        clip.fade.push_back({f.at(0).get<double>(), f.at(1).get<double>()});
+      }
+      if (c.contains("key")) {
+        const json& k = c.at("key");
+        clip.key.type = key_from(k.at("type").get<std::string>());
+        const json& col = k.at("color");
+        clip.key.color = {col.at(0).get<std::uint8_t>(), col.at(1).get<std::uint8_t>(),
+                          col.at(2).get<std::uint8_t>(), 255};
+        clip.key.similarity = k.at("similarity").get<double>();
+        clip.key.blend = k.at("blend").get<double>();
+        clip.key.reverse = k.at("reverse").get<bool>();
+      }
       p.clips.push_back(clip);
     }
     for (const json& t : j.value("transitions", json::array())) {

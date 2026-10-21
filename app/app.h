@@ -20,6 +20,7 @@ class PreviewWindow;
 class ProjectWindow;
 class SettingsWindow;
 class TransitionSettingsWindow;
+class TransparencyWindow;
 class TransitionsWindow;
 namespace nanogui {
 class Label;
@@ -104,6 +105,15 @@ class App : public nanogui::Screen {
   // Opens the settings dialog for a transition; OK applies them.
   void edit_transition(int id);
   TransitionSettingsWindow* transition_settings() const { return transition_settings_; }
+
+  // Super and sound clips.
+  void set_fade(int clip, std::vector<mpp::FadePoint> fade);
+  // Opens the Transparency dialog for a Super clip; OK applies it.
+  void edit_key(int clip);
+  TransparencyWindow* transparency() const { return transparency_; }
+  // A double-click on a clip: Transparency for Super, the Clip window
+  // otherwise.
+  void open_timeline_clip(int clip);
   void set_tool(TimelineTool tool);
   TimelineTool tool() const { return tool_; }
   void zoom(int steps);
@@ -204,5 +214,6 @@ class App : public nanogui::Screen {
   SettingsWindow* settings_ = nullptr;
   TransitionsWindow* transitions_ = nullptr;
   TransitionSettingsWindow* transition_settings_ = nullptr;
+  TransparencyWindow* transparency_ = nullptr;
   nanogui::Label* status_ = nullptr;
 };

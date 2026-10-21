@@ -12,6 +12,7 @@ add_executable(mpp_tests
   golden.cpp
   test_bin_commands.cpp
   test_ffmpeg_source.cpp
+  test_keys.cpp
   test_media_cache.cpp
   test_project_file.cpp
   test_rate.cpp

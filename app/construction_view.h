@@ -26,6 +26,8 @@ struct ConstructionActions {
   std::function<void(std::int64_t in, std::int64_t out)> set_work_area;
   std::function<void(int transition, std::int64_t start, std::int64_t length)> set_transition_span;
   std::function<void(int transition)> edit_transition;  // double-click
+  std::function<void(int clip)> open_clip;              // double-click
+  std::function<void(int clip, std::vector<mpp::FadePoint> fade)> set_fade;
   std::function<void()> focus;  // the view was clicked
   // A small picture of an item at a source position (project frames), for
   // the head of each video clip.
@@ -75,6 +77,8 @@ class ConstructionView : public nanogui::Widget {
   // the work area bar (self-test; exact at 4 or more pixels a frame).
   nanogui::Vector2i point_at(mpp::Track track, std::int64_t frame) const;
   nanogui::Vector2i transition_point(std::int64_t frame) const;
+  // Screen position on a clip's rubber band at a frame and level (self-test).
+  nanogui::Vector2i fade_point(mpp::Track track, std::int64_t frame, double level) const;
   nanogui::Vector2i ruler_point(std::int64_t frame) const;
   nanogui::Vector2i work_area_point(std::int64_t frame) const;
 
@@ -91,7 +95,7 @@ class ConstructionView : public nanogui::Widget {
   enum class Row { VideoA, Transition, VideoB, Super, AudioA, AudioB, AudioC };
   enum class Drag {
     None, EditLine, WorkIn, WorkOut, WorkMove, Move, TrimHead, TrimTail, ScrollBar,
-    TransitionMove, TransitionHead, TransitionTail
+    TransitionMove, TransitionHead, TransitionTail, Fade
   };
   struct Hit {
     const mpp::Clip* clip = nullptr;
@@ -121,6 +125,14 @@ class ConstructionView : public nanogui::Widget {
   void draw_transition(NVGcontext* ctx, const mpp::Transition& t, std::int64_t start,
                        std::int64_t length, float alpha, bool selected);
   bool is_selected(int id) const;
+  // The rubber band: where a level sits vertically in a clip on a track,
+  // and the level at a vertical position.
+  float fade_y(mpp::Track track, double level) const;
+  double fade_level_at(mpp::Track track, int local_y) const;
+  float fade_x(const mpp::Clip& clip, double position) const;
+  static bool has_fade_band(mpp::Track track) { return track != mpp::Track::VideoA && track != mpp::Track::VideoB; }
+  // Starts a rubber band drag if the press is on a handle or the line.
+  bool press_fade(const mpp::Clip& clip, const nanogui::Vector2i& local);
   void draw_scroll_bar(NVGcontext* ctx);
 
   ConstructionActions actions_;
@@ -141,6 +153,9 @@ class ConstructionView : public nanogui::Widget {
   std::int64_t drag_length_ = 0;                               // a transition's
   std::int64_t work_in_ = 0, work_out_ = 0;                    // ghost work area
   double grab_offset_ = 0;  // frames between the clip start and the press
+  std::vector<mpp::FadePoint> drag_fade_;  // the rubber band being dragged
+  std::size_t fade_index_ = 0;             // the handle being dragged
+  bool fade_remove_ = false;               // dragged off the track: remove it
 
   std::optional<DropTarget> drop_;
   std::int64_t drop_length_ = 0;

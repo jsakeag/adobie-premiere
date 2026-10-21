@@ -33,6 +33,16 @@ mpp::Project sample() {
   t.border_color = {10, 20, 30, 255};
   t.direction = 2;
   e.execute(std::make_unique<mpp::AddTransitionCommand>("wipe", 20, 12, t));
+  const int clip = e.project().clip_at(Track::VideoA, 3)->id;
+  e.execute(std::make_unique<mpp::SetFadeCommand>(
+      clip, std::vector<mpp::FadePoint>{{2.5, 0.25}, {30, 0.75}}));
+  mpp::TransparencyKey k;
+  k.type = mpp::KeyType::Chroma;
+  k.color = {1, 2, 3, 255};
+  k.similarity = 0.4;
+  k.blend = 0.05;
+  k.reverse = true;
+  e.execute(std::make_unique<mpp::SetKeyCommand>(clip, k));
   return e.project();
 }
 
@@ -61,6 +71,8 @@ void check_same(const mpp::Project& a, const mpp::Project& b) {
     CHECK(a.clips[i].in == b.clips[i].in);
     CHECK(a.clips[i].out == b.clips[i].out);
     CHECK(a.clips[i].link == b.clips[i].link);
+    CHECK(a.clips[i].fade == b.clips[i].fade);
+    CHECK(a.clips[i].key == b.clips[i].key);
   }
   REQUIRE(a.transitions.size() == b.transitions.size());
   for (std::size_t i = 0; i < a.transitions.size(); ++i) {

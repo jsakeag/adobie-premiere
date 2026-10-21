@@ -12,6 +12,7 @@
 
 #include "clip_window.h"
 #include "frame_view.h"
+#include "key_window.h"
 #include "mpp/bin_commands.h"
 #include "mpp/image_io.h"
 #include "mpp/project_file.h"
@@ -86,6 +87,10 @@ App::App() : nanogui::Screen(nanogui::Vector2i(1440, 900), "Mock Premiere") {
     set_transition_span(id, s, l);
   };
   timeline.edit_transition = [this](int id) { edit_transition(id); };
+  timeline.open_clip = [this](int id) { open_timeline_clip(id); };
+  timeline.set_fade = [this](int id, std::vector<mpp::FadePoint> fade) {
+    set_fade(id, std::move(fade));
+  };
   timeline.focus = [this] { focus_ = Focus::Timeline; };
   timeline.thumbnail = [this](int item, std::int64_t pos) { return item_thumbnail(item, pos); };
   ConstructionToolbarActions toolbar;
@@ -150,6 +155,8 @@ std::vector<Menu> App::build_menus() {
     const bool open = clip_item_ != 0;
     const int transition =
         selection_.size() == 1 && project().transition(selection_[0]) ? selection_[0] : 0;
+    const mpp::Clip* chosen = selection_.size() == 1 ? project().clip(selection_[0]) : nullptr;
+    const int super = chosen && chosen->track == mpp::Track::Superimpose ? chosen->id : 0;
     return std::vector<MenuItem>{
         {"Open in Clip Window", "Return", [this] { open_clip(selected_item_); },
          selected_item_ != 0},
@@ -163,6 +170,7 @@ std::vector<Menu> App::build_menus() {
         {"", "", nullptr},
         {"Transition Settings...", "", [this, transition] { edit_transition(transition); },
          transition != 0},
+        {"Transparency...", "", [this, super] { edit_key(super); }, super != 0},
     };
   }});
   menus.push_back({"Windows", [this] {
@@ -650,6 +658,46 @@ void App::edit_transition(int id) {
   layout_widgets();
   transition_settings_->set_position((m_size - transition_settings_->size()) / 2);
   move_window_to_front(transition_settings_);
+}
+
+void App::set_fade(int clip, std::vector<mpp::FadePoint> fade) {
+  run(std::make_unique<mpp::SetFadeCommand>(clip, std::move(fade)));
+}
+
+void App::open_timeline_clip(int id) {
+  const mpp::Clip* clip = project().clip(id);
+  if (!clip) return;
+  if (clip->track == mpp::Track::Superimpose) {
+    edit_key(id);
+  } else {
+    open_clip(clip->item);
+  }
+}
+
+void App::edit_key(int id) {
+  const mpp::Clip* clip = project().clip(id);
+  if (!clip || transparency_) return;
+  // Preview at the edit line if it's over the clip, else at its start.
+  const std::int64_t frame = clip->covers(edit_line_) ? edit_line_ : clip->start;
+  mpp::Image picture, opaque;
+  try {
+    picture = mpp::clip_picture(project(), cache_, *clip, frame, true);
+    opaque = mpp::clip_picture(project(), cache_, *clip, frame, false);
+  } catch (const std::exception& e) {
+    message_ = e.what();
+    return;
+  }
+  transparency_ = new TransparencyWindow(
+      this, clip->key, std::move(picture), std::move(opaque),
+      mpp::render_beneath_super(project(), cache_, frame),
+      [this, id](const mpp::TransparencyKey& key) {
+        run(std::make_unique<mpp::SetKeyCommand>(id, key));
+      });
+  transparency_->set_closed_callback([this] { transparency_ = nullptr; });
+  perform_layout();
+  layout_widgets();
+  transparency_->set_position((m_size - transparency_->size()) / 2);
+  move_window_to_front(transparency_);
 }
 
 void App::set_tool(TimelineTool tool) {

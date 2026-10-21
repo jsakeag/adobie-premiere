@@ -102,3 +102,33 @@ TEST_CASE("a transition mixes Video A into Video B", "[render][transitions]") {
   const mpp::Color reversed = mpp::render_frame(p, cache, 14).pixel(20, 60);
   CHECK(reversed.r == std::lround(a.r * 0.45));
 }
+
+TEST_CASE("the Super track is keyed and faded over the program", "[render][keys]") {
+  mpp::ProjectSettings settings;
+  settings.width = 160;
+  settings.height = 120;
+  settings.rate = {15, 1, false};
+  mpp::Editor e(project_with({"counter.mov", "still.png"}, settings));
+  e.execute(std::make_unique<mpp::PlaceClipCommand>(1, Track::VideoA, 0, 0, 30));
+  e.execute(std::make_unique<mpp::PlaceClipCommand>(2, Track::Superimpose, 0, 0, 30));
+  const int super = e.project().clip_at(Track::Superimpose, 0)->id;
+  mpp::MediaCache cache;
+  const mpp::Project& p = e.project();
+  // No key: the still covers A, but its letterbox doesn't.
+  CHECK(mpp::render_frame(p, cache, 3).pixel(20, 60) == Color{0, 0, 255, 255});
+  CHECK(mpp::render_frame(p, cache, 3).pixel(20, 5) == counter(3));
+
+  mpp::TransparencyKey blue;
+  blue.type = mpp::KeyType::BlueScreen;
+  e.execute(std::make_unique<mpp::SetKeyCommand>(super, blue));
+  CHECK(mpp::render_frame(p, cache, 3).pixel(20, 60) == counter(3));
+  CHECK(mpp::render_frame(p, cache, 3).pixel(140, 60) == Color{255, 255, 0, 255});
+
+  // Fade from full at source frame 0 to nothing at 20: half way at 10.
+  e.execute(std::make_unique<mpp::SetFadeCommand>(
+      super, std::vector<mpp::FadePoint>{{0, 1.0}, {20, 0.0}}));
+  const Color half = mpp::render_frame(p, cache, 10).pixel(140, 60);
+  const Color a = counter(10);
+  CHECK(half.r == std::lround((255 + a.r) / 2.0));
+  CHECK(half.b == std::lround((0 + a.b) / 2.0));
+}

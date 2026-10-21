@@ -208,3 +208,21 @@ TEST_CASE("a dropped transition fits the A/B overlap", "[timeline][transitions]"
   run<mpp::MoveClipCommand>(e, e.project().clips_on(Track::VideoA)[0]->id, Track::VideoA, 130);
   CHECK(mpp::suggest_transition_span(e.project(), 132, 30).b_to_a);
 }
+
+TEST_CASE("fades and keys are commands", "[timeline][fade]") {
+  Editor e = editor_with_media();
+  run<mpp::PlaceClipCommand>(e, 2, Track::Superimpose, 0, 0, 60);
+  const int id = only_clip_on(e, Track::Superimpose).id;
+  run<mpp::SetFadeCommand>(e, id, std::vector<mpp::FadePoint>{{50, 0.0}, {10, 1.0}});
+  REQUIRE(e.project().clip(id)->fade.size() == 2);
+  CHECK(e.project().clip(id)->fade[0].position == 10);  // sorted
+  CHECK_THROWS(run<mpp::SetFadeCommand>(e, id, std::vector<mpp::FadePoint>{{10, 1.5}}));
+  mpp::TransparencyKey k;
+  k.type = mpp::KeyType::BlueScreen;
+  run<mpp::SetKeyCommand>(e, id, k);
+  CHECK(e.project().clip(id)->key.type == mpp::KeyType::BlueScreen);
+  k.blend = 2;
+  CHECK_THROWS(run<mpp::SetKeyCommand>(e, id, k));
+  e.undo();
+  CHECK(e.project().clip(id)->key.type == mpp::KeyType::None);
+}

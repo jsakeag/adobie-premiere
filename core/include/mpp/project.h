@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "mpp/keys.h"
 #include "mpp/media.h"
 #include "mpp/rate.h"
 #include "mpp/transitions.h"
@@ -53,6 +54,20 @@ inline bool is_audio_track(Track t) {
 inline bool is_video_track(Track t) { return !is_audio_track(t); }
 const char* track_name(Track t);
 
+// A handle on a clip's rubber band: the Super track's opacity or a sound
+// clip's volume. `position` is in project frames into the source, so a
+// handle stays with its picture or sound when the clip is trimmed.
+struct FadePoint {
+  double position = 0;
+  double level = 1.0;  // 0..1
+
+  bool operator==(const FadePoint& o) const { return position == o.position && level == o.level; }
+};
+
+// The rubber band's level at a source position: straight lines between
+// handles, flat before the first and after the last, 1 with no handles.
+double fade_level(const std::vector<FadePoint>& fade, double position);
+
 // One use of a bin item on a track. `in` and `out` are project frames into
 // the source (out exclusive); the clip covers timeline frames
 // [start, end()). A picture and its sound placed together are two clips
@@ -65,6 +80,8 @@ struct Clip {
   std::int64_t in = 0;
   std::int64_t out = 0;
   int link = 0;
+  std::vector<FadePoint> fade;  // sorted by position; empty is full level
+  TransparencyKey key;          // used on the Super track
 
   std::int64_t length() const { return out - in; }
   std::int64_t end() const { return start + length(); }

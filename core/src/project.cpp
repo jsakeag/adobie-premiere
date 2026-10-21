@@ -22,6 +22,20 @@ int Project::item_index(int id) const {
   return -1;
 }
 
+double fade_level(const std::vector<FadePoint>& fade, double position) {
+  if (fade.empty()) return 1.0;
+  if (position <= fade.front().position) return fade.front().level;
+  for (std::size_t i = 1; i < fade.size(); ++i) {
+    const FadePoint& a = fade[i - 1];
+    const FadePoint& b = fade[i];
+    if (position <= b.position) {
+      if (b.position <= a.position) return b.level;
+      return a.level + (b.level - a.level) * (position - a.position) / (b.position - a.position);
+    }
+  }
+  return fade.back().level;
+}
+
 const char* track_name(Track t) {
   switch (t) {
     case Track::VideoA: return "Video A";

@@ -18,6 +18,7 @@ add_executable(mock_premiere
   clip_window.cpp
   construction_view.cpp
   frame_view.cpp
+  key_window.cpp
   main.cpp
   menu_bar.cpp
   project_window.cpp

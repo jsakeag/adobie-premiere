@@ -16,6 +16,7 @@
 #include "mpp/project_file.h"
 #include "settings_window.h"
 #include "timeline_windows.h"
+#include "key_window.h"
 #include "transition_windows.h"
 
 namespace {
@@ -295,6 +296,69 @@ int run_selftest(const std::string& out_dir, const std::string& fixtures) {
     app->settings_window()->cancel();
     check(app->settings_window() == nullptr, "Cancel closes Project Settings");
     shot("19_transitions_window");
+
+    // Milestone 4: the Super track, transparency and rubber bands.
+    app->new_project();
+    app->import(media("counter.mov"));
+    app->import(media("still.png"));
+    app->place(project().bin[0].id, mpp::Track::VideoA, 0);
+    app->place(project().bin[1].id, mpp::Track::Superimpose, 0);
+    const int super = project().clip_at(mpp::Track::Superimpose, 0)->id;
+    app->set_edit_line(10);
+    app->draw_all();
+    check(app->preview_window()->view()->frame().pixel(20, 120) == mpp::Color{0, 0, 255, 255},
+          "with no key, the Super clip covers Video A");
+    check(app->preview_window()->view()->frame().pixel(20, 10) == mpp::Color{40, 215, 64, 255},
+          "but not where it's letterboxed");
+
+    app->simulate_click(view->point_at(mpp::Track::Superimpose, 30));
+    app->simulate_click(view->point_at(mpp::Track::Superimpose, 30), nanogui::MOD_DOUBLE_CLICK);
+    check(app->transparency() != nullptr, "double-clicking a Super clip opens Transparency");
+    if (app->transparency()) {
+      mpp::TransparencyKey key;
+      key.type = mpp::KeyType::BlueScreen;
+      app->transparency()->set_key(key);
+      shot("20_transparency");
+      app->transparency()->ok();
+    }
+    check(project().clip(super)->key.type == mpp::KeyType::BlueScreen, "Blue Screen is applied");
+    app->draw_all();
+    check(app->preview_window()->view()->frame().pixel(20, 120) == mpp::Color{40, 215, 64, 255},
+          "Video A shows through where the still is blue");
+    check(app->preview_window()->view()->frame().pixel(300, 120) == mpp::Color{255, 255, 0, 255},
+          "and the yellow stays");
+
+    // Rubber band: pull the line down at frame 20, then up again at 60.
+    app->simulate_drag(view->fade_point(mpp::Track::Superimpose, 20, 1.0),
+                       view->fade_point(mpp::Track::Superimpose, 20, 0.0));
+    check(project().clip(super)->fade.size() == 1 && project().clip(super)->fade[0].level == 0.0,
+          "dragging the Super rubber band adds a handle at 0%");
+    app->simulate_drag(view->fade_point(mpp::Track::Superimpose, 60, 0.0),
+                       view->fade_point(mpp::Track::Superimpose, 60, 1.0));
+    const auto& fade = project().clip(super)->fade;
+    check(fade.size() == 2 && fade[1].level == 1.0 && std::abs(fade[1].position - 60.25) < 0.01,
+          "a second handle at 100%");
+    app->set_edit_line(40);
+    app->draw_all();
+    const mpp::Color faded = app->preview_window()->view()->frame().pixel(300, 120);
+    // Level 0.49 at frame 40: yellow over counter frame 20 (160, 95, 64).
+    check(std::abs(faded.r - 206) <= 3 && std::abs(faded.b - 33) <= 3,
+          "half way between the handles the still is half faded");
+    shot("21_fade");
+    app->simulate_drag(view->fade_point(mpp::Track::Superimpose, 20, 0.0),
+                       view->fade_point(mpp::Track::Superimpose, 20, 0.0) + nanogui::Vector2i(0, 120));
+    check(project().clip(super)->fade.size() == 1, "dragging a handle off the track removes it");
+
+    // Sound has a volume rubber band too.
+    app->simulate_drag(view->fade_point(mpp::Track::AudioA, 30, 1.0),
+                       view->fade_point(mpp::Track::AudioA, 30, 0.5));
+    const mpp::Clip* sound_clip = project().clip_at(mpp::Track::AudioA, 30);
+    check(sound_clip && sound_clip->fade.size() == 1 &&
+              std::abs(sound_clip->fade[0].level - 0.5) < 0.06,
+          "dragging the audio rubber band sets a volume handle");
+    shot("22_volume");
+    app->toggle_undo();
+    check(project().clip_at(mpp::Track::AudioA, 30)->fade.empty(), "undo takes the handle away");
   }
   nanogui::shutdown();
   std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "PASSED", failures);

@@ -6,6 +6,7 @@ add_library(mpp_core STATIC
   src/ffmpeg_source.cpp
   src/image.cpp
   src/image_io.cpp
+  src/keys.cpp
   src/media.cpp
   src/media_cache.cpp
   src/project.cpp

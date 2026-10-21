@@ -135,6 +135,33 @@ class SetTransitionSettingsCommand : public Command {
   void apply(Project& p) override;
 };
 
+// Replaces a clip's rubber band handles (opacity on Super, volume on sound).
+// Levels must be 0..1; handles are stored sorted by position. Handles may
+// lie outside the clip's range (after a trim or a razor cut) and still
+// shape the line between them.
+class SetFadeCommand : public Command {
+ public:
+  SetFadeCommand(int clip, std::vector<FadePoint> fade) : clip(clip), fade(std::move(fade)) {}
+  std::string name() const override { return "Fade"; }
+  const int clip;
+  const std::vector<FadePoint> fade;
+
+ protected:
+  void apply(Project& p) override;
+};
+
+// The Transparency dialog's OK.
+class SetKeyCommand : public Command {
+ public:
+  SetKeyCommand(int clip, TransparencyKey key) : clip(clip), key(key) {}
+  std::string name() const override { return "Transparency"; }
+  const int clip;
+  const TransparencyKey key;
+
+ protected:
+  void apply(Project& p) override;
+};
+
 // The yellow work area bar: the frames [in, out) that Preview renders.
 class SetWorkAreaCommand : public Command {
  public:
