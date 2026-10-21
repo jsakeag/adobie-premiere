@@ -121,14 +121,19 @@ void RazorCommand::apply(Project& p) {
   if (frame <= original.start || frame >= original.end()) {
     refuse("The razor has to cut inside the clip");
   }
+  // At another speed a cut lands where a source frame starts, which may
+  // be a frame from where it was asked for.
+  const std::int64_t at =
+      original.in + std::llround((frame - original.start) * original.speed / 100.0);
+  if (at <= original.in || at >= original.out) refuse("The razor has to cut inside the clip");
   const auto split = [&](int id) {
     Clip& left = find_clip(p, id);
     Clip right = left;
     right.id = p.next_id++;
-    const std::int64_t at = left.in + (frame - left.start);
-    left.out = at;
-    right.in = at;
-    right.start = frame;
+    const std::int64_t cut = left.in + (at - original.in);
+    left.out = cut;
+    right.in = cut;
+    right.start = left.start + left.length();
     right.link = 0;
     p.clips.push_back(right);
     return right.id;
@@ -305,6 +310,32 @@ void SetFiltersCommand::apply(Project& p) {
     }
   }
   c.filters = filters;
+}
+
+void SetMotionCommand::apply(Project& p) {
+  Clip& c = find_clip(p, clip);
+  if (is_audio_track(c.track)) refuse("Sound has no motion");
+  if (motion) {
+    if (motion->points.empty()) refuse("A motion path needs a point");
+    double last = -1;
+    for (const MotionPoint& m : motion->points) {
+      if (m.t < 0 || m.t > 1 || m.t < last) refuse("Motion points must run in order through the clip");
+      if (m.zoom < 0 || m.zoom > 1000) refuse("Zoom runs from 0 to 1000%");
+      last = m.t;
+    }
+  }
+  c.motion = motion;
+}
+
+void SetSpeedCommand::apply(Project& p) {
+  if (speed < 1 || speed > 1000) refuse("Speed runs from 1 to 1000%");
+  Clip& c = find_clip(p, clip);
+  c.speed = speed;
+  const Clip changed = c;
+  Clip* partner = c.link ? p.clip(c.link) : nullptr;
+  if (partner) partner->speed = speed;
+  check_clip(p, changed);
+  if (partner) check_clip(p, *partner);
 }
 
 void SetKeyCommand::apply(Project& p) {

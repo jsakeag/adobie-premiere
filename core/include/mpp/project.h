@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -8,6 +10,7 @@
 #include "mpp/filters.h"
 #include "mpp/keys.h"
 #include "mpp/media.h"
+#include "mpp/motion.h"
 #include "mpp/rate.h"
 #include "mpp/title.h"
 #include "mpp/transitions.h"
@@ -89,8 +92,14 @@ struct Clip {
   std::vector<FadePoint> fade;  // sorted by position; empty is full level
   TransparencyKey key;          // used on the Super track
   std::vector<FilterInstance> filters;  // video filters, or audio ones on sound
+  std::optional<Motion> motion;         // a motion path (2.0); none keeps it centred
+  int speed = 100;  // percent (2.0): 50 plays the source at half speed, twice as long
 
-  std::int64_t length() const { return out - in; }
+  // Timeline frames: the source range at the clip's speed.
+  std::int64_t length() const {
+    if (speed == 100) return out - in;
+    return std::max<std::int64_t>(1, std::llround((out - in) * 100.0 / speed));
+  }
   std::int64_t end() const { return start + length(); }
   bool covers(std::int64_t frame) const { return frame >= start && frame < end(); }
 };

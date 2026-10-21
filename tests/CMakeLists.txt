@@ -16,6 +16,7 @@ add_executable(mpp_tests
   test_filters.cpp
   test_keys.cpp
   test_media_cache.cpp
+  test_motion.cpp
   test_movie_writer.cpp
   test_project_file.cpp
   test_rate.cpp

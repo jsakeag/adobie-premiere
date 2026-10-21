@@ -25,15 +25,33 @@ AudioBuffer clip_audio(const Project& project, MediaCache& cache, const Clip& cl
 
   const auto source = cache.audio(item->path, s.audio_rate);
   const std::int64_t offset = frame_to_sample(s, clip.in);
-  const std::int64_t available =
-      std::clamp<std::int64_t>(static_cast<std::int64_t>(source->frames()) - offset, 0, count);
-  if (available > 0) {
-    std::copy(source->samples.begin() + offset * 2, source->samples.begin() + (offset + available) * 2,
-              out.samples.begin());
+  const double step = clip.speed / 100.0;
+  if (clip.speed == 100) {
+    const std::int64_t available =
+        std::clamp<std::int64_t>(static_cast<std::int64_t>(source->frames()) - offset, 0, count);
+    if (available > 0) {
+      std::copy(source->samples.begin() + offset * 2,
+                source->samples.begin() + (offset + available) * 2, out.samples.begin());
+    }
+  } else {
+    // At another speed the sound is read faster or slower, which moves its
+    // pitch, as a tape would. Straight lines between samples.
+    const auto total = static_cast<std::int64_t>(source->frames());
+    for (std::int64_t k = 0; k < count; ++k) {
+      const double at = offset + k * step;
+      const auto i = static_cast<std::int64_t>(std::floor(at));
+      if (i + 1 >= total) break;
+      const float f = static_cast<float>(at - i);
+      for (int c = 0; c < 2; ++c) {
+        out.samples[static_cast<std::size_t>(k) * 2 + c] =
+            source->samples[static_cast<std::size_t>(i) * 2 + c] * (1 - f) +
+            source->samples[static_cast<std::size_t>(i + 1) * 2 + c] * f;
+      }
+    }
   }
   apply_audio_filters(out.samples, s.audio_rate, clip.filters);
   if (!clip.fade.empty()) {
-    const double frames_per_sample = s.rate.fps() / s.audio_rate;
+    const double frames_per_sample = s.rate.fps() / s.audio_rate * step;
     for (std::int64_t k = 0; k < count; ++k) {
       const float level = static_cast<float>(fade_level(clip.fade, clip.in + k * frames_per_sample));
       out.samples[static_cast<std::size_t>(k) * 2] *= level;

@@ -413,6 +413,10 @@ bool ConstructionView::mouse_button_event(const Vector2i& p, int button, bool do
       if (moved_ && clip && (drag_start_ != clip->start || drag_track_ != clip->track) &&
           actions_.move) {
         actions_.move(drag_clip_, drag_track_, drag_start_);
+      } else if (!moved_ && actions_.select && selected_ != std::vector<int>{drag_clip_}) {
+        // A click without a drag picks just this clip, even from a larger
+        // selection.
+        actions_.select({drag_clip_});
       }
       break;
     case Drag::Fade:
@@ -540,13 +544,15 @@ bool ConstructionView::mouse_drag_event(const Vector2i& p, const Vector2i& rel, 
       if (!clip) break;
       std::vector<int> ignore = {clip->id};
       if (clip->link) ignore.push_back(clip->link);
-      std::int64_t start = mpp::snap(boundary, mpp::snap_points(*project_, edit_line_, ignore),
-                                     tolerance);
-      // Can't pass the end, or reach before the start of the source.
-      start = std::min(start, clip->end() - 1);
-      start = std::max(start, clip->start - clip->in);
-      drag_start_ = start;
-      drag_in_ = clip->in + (start - clip->start);
+      const std::int64_t start =
+          mpp::snap(boundary, mpp::snap_points(*project_, edit_line_, ignore), tolerance);
+      // The source frame there, at the clip's speed; can't pass the end or
+      // reach before the start of the source. The end stays put.
+      Clip trimmed = *clip;
+      trimmed.in = std::clamp<std::int64_t>(
+          clip->in + std::llround((start - clip->start) * clip->speed / 100.0), 0, clip->out - 1);
+      drag_start_ = clip->end() - trimmed.length();
+      drag_in_ = trimmed.in;
       drag_out_ = clip->out;
       break;
     }
@@ -558,7 +564,8 @@ bool ConstructionView::mouse_drag_event(const Vector2i& p, const Vector2i& rel, 
       std::int64_t end = mpp::snap(boundary, mpp::snap_points(*project_, edit_line_, ignore),
                                    tolerance);
       end = std::max(end, clip->start + 1);
-      std::int64_t out = clip->in + (end - clip->start);
+      std::int64_t out = std::max(clip->in + 1,
+                                  clip->in + std::llround((end - clip->start) * clip->speed / 100.0));
       const mpp::MediaItem* item = project_->item(clip->item);
       if (item) {
         if (const auto length = mpp::source_length(item->info, project_->settings.rate)) {
@@ -834,11 +841,14 @@ void ConstructionView::draw_clip(NVGcontext* ctx, const Clip& clip, std::int64_t
     }
   }
   if (item) {
+    std::string label = item->name;
+    if (clip.speed != 100) label += "  " + std::to_string(clip.speed) + "%";
+    if (clip.motion) label += "  [motion]";
     nvgFontFace(ctx, "sans");
     nvgFontSize(ctx, 13);
     nvgTextAlign(ctx, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
     nvgFillColor(ctx, nvgRGBAf(1, 1, 1, alpha));
-    nvgText(ctx, text_x, y + 3, item->name.c_str(), nullptr);
+    nvgText(ctx, text_x, y + 3, label.c_str(), nullptr);
   }
   if (has_fade_band(track)) {
     // The rubber band, through its handles, across the clip.

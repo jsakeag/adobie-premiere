@@ -61,6 +61,11 @@ mpp::Project sample() {
   title.shapes.push_back(oval);
   e.execute(std::make_unique<mpp::AddItemCommand>(mpp::make_title_item(title, "Words", s)));
   e.execute(std::make_unique<mpp::SetSequenceCommand>(std::vector<int>{2, 1, 2}));
+  const int still_clip = e.project().clip_at(Track::VideoB, 0)->id;
+  mpp::Motion path = mpp::default_motion();
+  path.points.insert(path.points.begin() + 1, {0.4, 0.5, 0.25, 45, 80});
+  e.execute(std::make_unique<mpp::SetMotionCommand>(still_clip, path));
+  e.execute(std::make_unique<mpp::SetSpeedCommand>(still_clip, 75));
   return e.project();
 }
 
@@ -93,6 +98,8 @@ void check_same(const mpp::Project& a, const mpp::Project& b) {
     CHECK(a.clips[i].fade == b.clips[i].fade);
     CHECK(a.clips[i].key == b.clips[i].key);
     CHECK(a.clips[i].filters == b.clips[i].filters);
+    CHECK(a.clips[i].motion == b.clips[i].motion);
+    CHECK(a.clips[i].speed == b.clips[i].speed);
   }
   CHECK(a.sequence == b.sequence);
   REQUIRE(a.transitions.size() == b.transitions.size());

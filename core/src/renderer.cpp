@@ -4,13 +4,15 @@
 #include <exception>
 
 #include "mpp/compositing.h"
+#include "mpp/motion.h"
 #include "mpp/resample.h"
 #include "mpp/title.h"
 
 namespace mpp {
 
 double clip_source_position(const Clip& clip, std::int64_t frame) {
-  return static_cast<double>(clip.in + (frame - clip.start));
+  if (clip.speed == 100) return static_cast<double>(clip.in + (frame - clip.start));
+  return clip.in + (frame - clip.start) * clip.speed / 100.0;
 }
 
 Image item_picture(const Project& project, MediaCache& cache, const MediaItem& item,
@@ -41,13 +43,10 @@ Image clip_picture(const Project& project, MediaCache& cache, const Clip& clip,
                    std::int64_t frame, bool keep_alpha) {
   const ProjectSettings& s = project.settings;
   Image picture = clip_source(project, cache, clip, frame, keep_alpha);
-  Image out(s.width, s.height, kTransparent);
-  if (picture.empty()) return out;
-  if (!clip.filters.empty()) {
-    picture = apply_video_filters(picture, clip.filters, clip_progress(clip, frame), frame);
-  }
-  out.blit(picture, {(s.width - picture.width()) / 2, (s.height - picture.height()) / 2});
-  return out;
+  if (picture.empty()) return Image(s.width, s.height, kTransparent);
+  const double t = clip_progress(clip, frame);
+  if (!clip.filters.empty()) picture = apply_video_filters(picture, clip.filters, t, frame);
+  return place_picture(picture, clip.motion ? &*clip.motion : nullptr, t, s.width, s.height);
 }
 
 Image track_picture(const Project& project, MediaCache& cache, Track track, std::int64_t frame) {

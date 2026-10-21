@@ -23,7 +23,9 @@ class ConstructionWindow;
 class ExportWindow;
 class FullScreenView;
 class PreviewWindow;
+class MotionWindow;
 class SequenceWindow;
+class SpeedWindow;
 class TitleWindow;
 class ProjectWindow;
 class SettingsWindow;
@@ -124,6 +126,11 @@ class App : public nanogui::Screen {
   // Opens the Transparency dialog for a Super clip; OK applies it.
   void edit_key(int clip);
   TransparencyWindow* transparency() const { return transparency_; }
+  // Clip > Motion and Clip > Speed (2.0) for a clip; OK applies.
+  void edit_motion(int clip);
+  void edit_speed(int clip);
+  MotionWindow* motion_window() const { return motion_window_; }
+  SpeedWindow* speed_window() const { return speed_window_; }
   // Opens the Filters dialog for a clip; OK applies the list.
   void edit_filters(int clip);
   FiltersWindow* filters_window() const { return filters_window_; }
@@ -299,6 +306,8 @@ class App : public nanogui::Screen {
   FiltersWindow* filters_window_ = nullptr;
   ExportWindow* export_window_ = nullptr;
   TitleWindow* title_window_ = nullptr;
+  MotionWindow* motion_window_ = nullptr;
+  SpeedWindow* speed_window_ = nullptr;
   SequenceWindow* sequence_ = nullptr;
   int titles_made_ = 0;  // for naming new titles
   nanogui::Label* status_ = nullptr;

@@ -15,6 +15,7 @@
 #include "frame_view.h"
 #include "key_window.h"
 #include "make_windows.h"
+#include "motion_window.h"
 #include "mpp/audio_mixer.h"
 #include "mpp/compositing.h"
 #include "mpp/bin_commands.h"
@@ -195,6 +196,9 @@ std::vector<Menu> App::build_menus() {
          transition != 0},
         {"Transparency...", "", [this, super] { edit_key(super); }, super != 0},
         {"Filters...", "Cmd+F", [this, chosen_id] { edit_filters(chosen_id); }, chosen_id != 0},
+        {"Motion...", "", [this, chosen_id] { edit_motion(chosen_id); },
+         chosen && mpp::is_video_track(chosen->track)},
+        {"Speed...", "", [this, chosen_id] { edit_speed(chosen_id); }, chosen_id != 0},
     };
   }});
   menus.push_back({"Make", [this] {
@@ -247,6 +251,7 @@ void App::set_project(mpp::Project project, const std::string& name, const std::
   clip_pos_ = 0;
   clip_shown_item_ = -1;
   edit_line_ = 0;
+  construction_->view()->scroll_to_start();
   message_.clear();
   doc_name_ = name;
   doc_path_ = path;
@@ -969,6 +974,42 @@ void App::edit_filters(int id) {
   layout_widgets();
   filters_window_->set_position((m_size - filters_window_->size()) / 2);
   move_window_to_front(filters_window_);
+}
+
+void App::edit_motion(int id) {
+  const mpp::Clip* clip = project().clip(id);
+  if (!clip || mpp::is_audio_track(clip->track) || motion_window_) return;
+  mpp::Image picture;
+  try {
+    picture = mpp::clip_source(project(), cache_, *clip, clip->start);
+  } catch (const std::exception& e) {
+    message_ = e.what();
+    return;
+  }
+  const mpp::ProjectSettings& s = project().settings;
+  motion_window_ = new MotionWindow(this, clip->motion, std::move(picture), s.width, s.height,
+                                    [this, id](const std::optional<mpp::Motion>& motion) {
+    run(std::make_unique<mpp::SetMotionCommand>(id, motion));
+  });
+  motion_window_->set_closed_callback([this] { motion_window_ = nullptr; });
+  perform_layout();
+  layout_widgets();
+  motion_window_->set_position((m_size - motion_window_->size()) / 2);
+  move_window_to_front(motion_window_);
+}
+
+void App::edit_speed(int id) {
+  const mpp::Clip* clip = project().clip(id);
+  if (!clip || speed_window_) return;
+  speed_window_ = new SpeedWindow(this, clip->speed, clip->out - clip->in, project().settings.rate,
+                                  [this, id](int speed) {
+    run(std::make_unique<mpp::SetSpeedCommand>(id, speed));
+  });
+  speed_window_->set_closed_callback([this] { speed_window_ = nullptr; });
+  perform_layout();
+  layout_widgets();
+  speed_window_->set_position((m_size - speed_window_->size()) / 2);
+  move_window_to_front(speed_window_);
 }
 
 void App::edit_key(int id) {

@@ -159,7 +159,16 @@ std::string encode_project(const Project& p, const std::string& project_dir) {
     for (const FilterInstance& f : c.filters) {
       filters.push_back({{"id", f.id}, {"start", f.start}, {"end", f.end}});
     }
+    json motion = nullptr;
+    if (c.motion) {
+      motion = json::array();
+      for (const MotionPoint& m : c.motion->points) {
+        motion.push_back({{"t", m.t}, {"x", m.x}, {"y", m.y}, {"rotation", m.rotation}, {"zoom", m.zoom}});
+      }
+    }
     clips.push_back({{"filters", filters},
+                     {"motion", motion},
+                     {"speed", c.speed},
                      {"id", c.id},
                      {"item", c.item},
                      {"track", track_name(c.track)},
@@ -255,6 +264,15 @@ Project decode_project(const std::string& text, const std::string& project_dir) 
       clip.link = c.at("link").get<int>();
       for (const json& f : c.value("fade", json::array())) {
         clip.fade.push_back({f.at(0).get<double>(), f.at(1).get<double>()});
+      }
+      clip.speed = c.value("speed", 100);
+      if (c.contains("motion") && c.at("motion").is_array()) {
+        Motion motion;
+        for (const json& m : c.at("motion")) {
+          motion.points.push_back({m.at("t").get<double>(), m.at("x").get<double>(), m.at("y").get<double>(),
+                                   m.at("rotation").get<double>(), m.at("zoom").get<double>()});
+        }
+        clip.motion = motion;
       }
       for (const json& f : c.value("filters", json::array())) {
         clip.filters.push_back({f.at("id").get<std::string>(),

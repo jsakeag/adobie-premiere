@@ -12,6 +12,7 @@ add_library(mpp_core STATIC
   src/keys.cpp
   src/media.cpp
   src/media_cache.cpp
+  src/motion.cpp
   src/movie_writer.cpp
   src/project.cpp
   src/project_file.cpp

@@ -24,6 +24,7 @@
 #include "timeline_windows.h"
 #include "key_window.h"
 #include "make_windows.h"
+#include "motion_window.h"
 #include "mpp/ffmpeg_source.h"
 #include "mpp/image_io.h"
 #include "mpp/renderer.h"
@@ -635,6 +636,74 @@ int run_selftest(const std::string& out_dir, const std::string& fixtures) {
     app->toggle_undo();
     check(project().clips_on(mpp::Track::VideoB).empty() && project().transitions.empty(),
           "one undo takes it all back");
+
+    // Milestone 8: motion and speed.
+    app->new_project();
+    app->import(media("counter.mov"));
+    app->import(media("still.png"));
+    app->place(project().bin[0].id, mpp::Track::VideoA, 0);
+    const int moving = project().clip_at(mpp::Track::VideoA, 0)->id;
+    app->draw_all();
+    app->simulate_click(view->point_at(mpp::Track::VideoA, 20));
+    app->menu_bar()->open(3);
+    check(app->menu_bar()->choose("Motion..."), "Clip > Motion... is there for a picture clip");
+    MotionWindow* motion = app->motion_window();
+    check(motion && motion->motion().points.size() == 2 && motion->motion().points[0].x == -0.5,
+          "it opens on Premiere's left-to-right path");
+    if (motion) {
+      motion->add_point();
+      check(motion->motion().points.size() == 3 && motion->selected() == 1 &&
+                std::abs(motion->motion().points[1].x - 0.5) < 1e-9,
+            "Add Point puts one half way along");
+      app->draw_all();
+      app->simulate_drag(motion->stage_point(0.5, 0.5), motion->stage_point(0.5, 0.25));
+      check(std::abs(motion->motion().points[1].y - 0.25) < 0.01,
+            "dragging a point on the stage moves it");
+      mpp::MotionPoint p = motion->motion().points[1];
+      p.rotation = 90;
+      p.zoom = 50;
+      motion->set_point(p);
+      motion->set_preview(0.5);
+      app->draw_all();
+      shot("35_motion");
+      motion->ok();
+    }
+    check(project().clip(moving) && project().clip(moving)->motion &&
+              project().clip(moving)->motion->points.size() == 3,
+          "OK gives the clip its path");
+    app->set_edit_line(30);
+    app->draw_all();
+    {
+      const mpp::Image& shown = app->preview_window()->view()->frame();
+      check(shown.pixel(160, 60) != mpp::kBlack && shown.pixel(160, 200) == mpp::kBlack &&
+                shown.pixel(20, 120) == mpp::kBlack,
+            "half way along, the clip is small and high in the frame");
+    }
+
+    app->menu_bar()->open(3);
+    check(app->menu_bar()->choose("Speed..."), "Clip > Speed...");
+    if (app->speed_window()) {
+      app->speed_window()->set_speed(50);
+      shot("36_speed");
+      app->speed_window()->ok();
+    }
+    const mpp::Clip* slowed = project().clip(moving);
+    check(slowed && slowed->speed == 50 && slowed->length() == 120 && project().clip(slowed->link) &&
+              project().clip(slowed->link)->length() == 120,
+          "half speed doubles the clip and its sound");
+    app->draw_all();
+    shot("37_slowed");
+    app->toggle_undo();
+    check(project().clip(moving) && project().clip(moving)->length() == 60, "undo restores the speed");
+    app->toggle_undo();
+    app->place(project().bin[1].id, mpp::Track::VideoA, 120);
+    app->edit_speed(moving);
+    if (app->speed_window()) {
+      app->speed_window()->set_speed(25);
+      app->speed_window()->ok();
+    }
+    check(project().clip(moving) && project().clip(moving)->speed == 50 && !app->message().empty(),
+          "a speed that would run into the next clip is refused");
   }
   nanogui::shutdown();
   std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "PASSED", failures);

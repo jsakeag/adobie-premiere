@@ -60,7 +60,7 @@ void SetSettingsCommand::apply(Project& p) {
       const std::int64_t length = std::max<std::int64_t>(1, at(clip.end()) - start);
       clip.start = start;
       clip.in = at(clip.in);
-      clip.out = clip.in + length;
+      clip.out = clip.in + std::max<std::int64_t>(1, std::llround(length * clip.speed / 100.0));
       const MediaItem* item = p.item(clip.item);
       const auto source = item ? source_length(item->info, settings.rate) : std::nullopt;
       if (source && clip.out > *source) {

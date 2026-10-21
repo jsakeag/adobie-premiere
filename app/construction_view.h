@@ -63,6 +63,8 @@ class ConstructionView : public nanogui::Widget {
   void forget_thumbnails() { forget_thumbs_ = true; }
   // Scrolls so a frame is visible.
   void reveal(std::int64_t frame);
+  // Back to the start of the program, as for a project just opened.
+  void scroll_to_start() { scale_.scroll = 0; }
 
   // For a bin item dragged over the window (screen coordinates): where it
   // would land, snapped to nearby edges. nullopt when not over a track that

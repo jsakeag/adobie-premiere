@@ -82,12 +82,12 @@ Track layout follows Windows 1.0, which is the only documented early layout ⚠�
 - [ ] Import text and graphics from vector files 🔁 (originally imported from Illustrator ✅ [2.0]) *Not built.*
 
 ### Motion
-- [ ] Animate a clip's position along a path made of keyframe points ✅ [2.0]
-- [ ] Rotation and scale on those motion points ✅ [2.0]
-- [ ] Linear interpolation only. Easing came in 3.0 and is out of scope.
+- [x] Animate a clip's position along a path made of keyframe points ✅ [2.0]
+- [x] Rotation and scale on those motion points ✅ [2.0]
+- [x] Linear interpolation only. Easing came in 3.0 and is out of scope.
 
 ### Speed
-- [ ] Change clip speed for slow and fast motion ✅ [2.0]
+- [x] Change clip speed for slow and fast motion ✅ [2.0] (1-1000%; sound follows, pitch and all)
 
 ### Audio upgrades
 - [x] 5 audio filters ✅ (the count is sourced, the names are not): Echo, Pan, Backwards, Fill Left, Fill Right

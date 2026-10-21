@@ -165,6 +165,32 @@ class SetFiltersCommand : public Command {
   void apply(Project& p) override;
 };
 
+// The Motion dialog's OK: a path, or none to take the motion away.
+class SetMotionCommand : public Command {
+ public:
+  SetMotionCommand(int clip, std::optional<Motion> motion) : clip(clip), motion(std::move(motion)) {}
+  std::string name() const override { return "Motion"; }
+  const int clip;
+  const std::optional<Motion> motion;
+
+ protected:
+  void apply(Project& p) override;
+};
+
+// Clip > Speed: plays the clip's source range faster or slower (1-1000%),
+// so the clip gets shorter or longer from its start. Its linked clip
+// changes too; a clip that would run into the next is refused.
+class SetSpeedCommand : public Command {
+ public:
+  SetSpeedCommand(int clip, int speed) : clip(clip), speed(speed) {}
+  std::string name() const override { return "Speed"; }
+  const int clip;
+  const int speed;
+
+ protected:
+  void apply(Project& p) override;
+};
+
 // The Transparency dialog's OK.
 class SetKeyCommand : public Command {
  public:

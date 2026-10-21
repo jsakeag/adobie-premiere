@@ -9,7 +9,7 @@
 namespace mpp {
 
 // The source position (project frames into the source) a clip shows at a
-// timeline frame.
+// timeline frame, allowing for its speed.
 double clip_source_position(const Clip& clip, std::int64_t frame);
 
 // An item's picture at a source position (project frames), at its own
@@ -31,7 +31,8 @@ Image clip_source(const Project& project, MediaCache& cache, const Clip& clip,
                   std::int64_t frame, bool keep_alpha = true);
 
 // A clip's picture at a timeline frame, fitted into the project's frame
-// size on a transparent background, with its filters applied at the fitted
+// size on a transparent background, with its filters applied and moved by
+// its motion path, at the fitted
 // size (so a radius in pixels means frame pixels). With `keep_alpha` false
 // the picture is made opaque (on black) first. Throws if the media can't be
 // read.

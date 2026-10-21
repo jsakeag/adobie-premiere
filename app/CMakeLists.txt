@@ -24,6 +24,7 @@ add_executable(mock_premiere
   main.cpp
   make_windows.cpp
   menu_bar.cpp
+  motion_window.cpp
   project_window.cpp
   selftest.cpp
   sequence_window.cpp
