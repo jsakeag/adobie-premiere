@@ -13,13 +13,13 @@ Each feature is tagged with the version it comes from, **[1.0]** or **[2.0]**, a
 ## Milestone 1: Premiere 1.0 baseline
 
 ### Project window
-- [ ] Import media into a project bin ✅ [1.0]
-- [ ] Bin list shows each clip's thumbnail, name, duration and type ⚠️ [1.0]
-- [ ] Save and open project files ⚠️ [1.0]
+- [x] Import media into a project bin ✅ [1.0]
+- [x] Bin list shows each clip's thumbnail, name, duration and type ⚠️ [1.0]
+- [x] Save and open project files ⚠️ [1.0]
 
 ### Clip window
-- [ ] Open a clip in its own window to play and scrub it ⚠️ [1.0]
-- [ ] Set in and out points on a clip before placing it ⚠️ [1.0]
+- [x] Open a clip in its own window to play and scrub it ⚠️ [1.0]
+- [x] Set in and out points on a clip before placing it ⚠️ [1.0]
 
 ### Construction window (the timeline)
 Track layout follows Windows 1.0, which is the only documented early layout ⚠️:
@@ -32,40 +32,40 @@ Track layout follows Windows 1.0, which is the only documented early layout ⚠�
 | Superimpose (S) | Overlay track composited above A/B |
 | Audio A, B, C | Three audio tracks |
 
-- [ ] Drag clips from the bin onto tracks ✅ [1.0]
-- [ ] Move clips by dragging, and trim them by dragging their edges ⚠️ [1.0]
-- [ ] A/B editing: clips on A and B overlap, and a transition on the T track blends them ✅ [1.0]
-- [ ] Timeline zoom (time-unit scale) ⚠️ [1.0]
-- [ ] Opacity and volume set with "rubber band" lines drawn on the track ⚠️ [1.0]
-- [ ] Work area bar marking the range to preview or render ⚠️ [1.0]
+- [x] Drag clips from the bin onto tracks ✅ [1.0]
+- [x] Move clips by dragging, and trim them by dragging their edges ⚠️ [1.0]
+- [x] A/B editing: clips on A and B overlap, and a transition on the T track blends them ✅ [1.0]
+- [x] Timeline zoom (time-unit scale) ⚠️ [1.0]
+- [x] Opacity and volume set with "rubber band" lines drawn on the track ⚠️ [1.0]
+- [x] Work area bar marking the range to preview or render ⚠️ [1.0]
 
 ### Superimpose and transparency
-- [ ] Composite the S track over the A/B result ✅ [1.0]
-- [ ] Transparency keys for the S track: chroma key, luma key and blue screen ⚠️ [1.0]
+- [x] Composite the S track over the A/B result ✅ [1.0]
+- [x] Transparency keys for the S track: None, Alpha Channel, Chroma, Luminance, Blue Screen, Green Screen, Multiply, Screen ⚠️ [1.0]
 
 ### Transitions
-- [ ] 24 transitions ✅ (the count is sourced, the names are not)
-- [ ] Settings for each transition: direction, border and start/end percentages ⚠️
-- [ ] Placeholder set until the real list is confirmed (names taken from later versions):
-  Cross Dissolve, Additive Dissolve, Dither Dissolve, Wipe, Barn Doors, Band Wipe, Checkerboard, Clock Wipe, Venetian Blinds, Random Blocks, Iris Round, Iris Square, Iris Diamond, Push, Slide, Split, Center Merge, Swap, Page Peel, Zoom, Spin, Stretch, Funnel, Doors
+- [x] 24 transitions ✅ (the count is sourced, the names are not)
+- [x] Settings for each transition: direction, border and start/end percentages ⚠️
+- [x] The set built, until the real list is confirmed (names from later versions; the 3D ones, such as Page Peel and Spin, were left out):
+  Cross Dissolve, Additive Dissolve, Dither Dissolve, Non-Additive Dissolve, Wipe, Barn Doors, Band Wipe, Checkerboard, Clock Wipe, Venetian Blinds, Random Blocks, Inset, Iris Round, Iris Square, Iris Diamond, Iris Cross, Push, Slide, Split, Center Split, Center Merge, Swap, Zoom, Stretch
 
 ### Filters
-- [ ] Apply video filters to a clip ✅ [1.0]
-- [ ] Filter settings use **a start value and an end value only**, with the values blended across the clip. There are no mid-clip keyframes. ⚠️
-- [ ] Plug-in interface for filters (the original was compatible with some Photoshop filters) ✅ [1.0] 🔁
+- [x] Apply video filters to a clip ✅ [1.0]: 24 built (see the 2.0 section for the list)
+- [x] Filter settings use **a start value and an end value only**, with the values blended across the clip. There are no mid-clip keyframes. ⚠️
+- [ ] Plug-in interface for filters (the original was compatible with some Photoshop filters) ✅ [1.0] 🔁 *Not built: filters are compiled in, through one registry that a plug-in loader could add to later.*
 
 ### Preview and rendering
-- [ ] Render a preview of the work area, then play it back ✅ [1.0]
-- [ ] Output frame sizes: authentic presets at **160×120 (NTSC)** and **192×144 (PAL)** ✅, plus modern presets 🔁
+- [x] Render a preview of the work area, then play it back ✅ [1.0]
+- [x] Output frame sizes: authentic presets at **160×120 (NTSC)** and **192×144 (PAL)** ✅, plus modern presets 🔁
 
 ### Audio
-- [ ] 8-bit audio playback and export, matching 1.0 ✅ [1.0]
+- [x] 8-bit audio playback and export, matching 1.0 ✅ [1.0]
 
 ### Import and export
-- [ ] Import video files 🔁 (originally QuickTime and VideoSpigot formats ✅)
-- [ ] Import still images 🔁 (originally PICT ✅)
-- [ ] Export the finished movie to a video file 🔁 (originally a QuickTime movie)
-- [ ] "Output to videotape" becomes full-screen playback of the program 🔁 [1.0]
+- [x] Import video files 🔁 (originally QuickTime and VideoSpigot formats ✅)
+- [x] Import still images 🔁 (originally PICT ✅)
+- [x] Export the finished movie to a video file 🔁 (originally a QuickTime movie)
+- [x] "Output to videotape" becomes full-screen playback of the program 🔁 [1.0]
 
 ---
 
@@ -90,17 +90,16 @@ Track layout follows Windows 1.0, which is the only documented early layout ⚠�
 - [ ] Change clip speed for slow and fast motion ✅ [2.0]
 
 ### Audio upgrades
-- [ ] 16-bit, 44.1 kHz audio ✅ [2.0]
-- [ ] 5 audio filters ✅ (the count is sourced, the names are not). Placeholders: Echo, Pan, Backwards, Fill Left, Fill Right
+- [x] 5 audio filters ✅ (the count is sourced, the names are not): Echo, Pan, Backwards, Fill Left, Fill Right
+- [x] 16-bit, 44.1 kHz sound is a project setting alongside 1.0's 8-bit
 
 ### Filters and effects expansion
-- [ ] 41 video filters ✅ (the count is sourced, the names are not)
+- [ ] 41 video filters ✅ (the count is sourced, the names are not). *24 built so far:* Brightness & Contrast, Levels, Gamma Correction, Hue & Saturation, Color Balance, Tint, Black & White, Invert, Posterize, Threshold, Solarize, Gaussian Blur, Camera Blur, Motion Blur, Sharpen, Emboss, Find Edges, Mosaic, Add Noise, Ripple, Replicate, Crop, Horizontal Flip, Vertical Flip
 - [ ] 49 "special effects", probably the expanded transition set ⚠️
-- [ ] Placeholder video filters until confirmed: Brightness & Contrast, Color Balance, Hue & Saturation, Gamma Correction, Black & White, Invert, Posterize, Blur, Gaussian Blur, Sharpen, Emboss, Find Edges, Mosaic, Crop, Horizontal Flip, Vertical Flip
 
 ### Timecode and EDL
-- [ ] SMPTE timecode display (`HH:MM:SS:FF`) throughout the interface ✅ [2.0]
-- [ ] Drop-frame timecode for 29.97 fps (`HH:MM:SS;FF`) and non-drop-frame timecode ⚠️
+- [x] SMPTE timecode display (`HH:MM:SS:FF`) throughout the interface ✅ [2.0]
+- [x] Drop-frame timecode for 29.97 fps (`HH:MM:SS;FF`) and non-drop-frame timecode ⚠️
 - [ ] EDL export of the timeline 🔁 (CMX 3600 format, which modern editors read) ✅ [2.0]
 
 ### New formats

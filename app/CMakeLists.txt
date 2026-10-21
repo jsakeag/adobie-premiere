@@ -15,12 +15,14 @@ FetchContent_MakeAvailable(nanogui)
 
 add_executable(mock_premiere
   app.cpp
+  audio_player.cpp
   clip_window.cpp
   construction_view.cpp
   filters_window.cpp
   frame_view.cpp
   key_window.cpp
   main.cpp
+  make_windows.cpp
   menu_bar.cpp
   project_window.cpp
   selftest.cpp
@@ -29,6 +31,7 @@ add_executable(mock_premiere
   transition_windows.cpp
 )
 target_link_libraries(mock_premiere PRIVATE mpp_core nanogui)
+target_include_directories(mock_premiere SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party/miniaudio)
 # Apple deprecates OpenGL; NanoGUI's backend and our screenshot code use it.
 target_compile_definitions(mock_premiere PRIVATE GL_SILENCE_DEPRECATION)
 target_compile_options(mock_premiere PRIVATE -Wall -Wextra)

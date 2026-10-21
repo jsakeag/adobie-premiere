@@ -12,6 +12,7 @@ class FrameView;
 namespace nanogui {
 class Button;
 class Label;
+class ProgressBar;
 }  // namespace nanogui
 
 struct ConstructionToolbarActions {
@@ -41,15 +42,27 @@ class ConstructionWindow : public nanogui::Window {
   nanogui::Label* info_ = nullptr;
 };
 
-// The Preview window: the program at the edit line.
+struct PreviewActions {
+  std::function<void()> play;  // render the work area if needed, then play it
+  std::function<void()> stop;  // stop playing, or cancel a render
+};
+
+// The Preview window: the program at the edit line, or the rendered work
+// area as it plays, with Play and Stop and a progress bar while rendering.
 class PreviewWindow : public nanogui::Window {
  public:
-  explicit PreviewWindow(nanogui::Widget* parent);
+  PreviewWindow(nanogui::Widget* parent, PreviewActions actions);
 
   FrameView* view() const { return view_; }
   void set_caption_text(const std::string& text);
+  // Shows the progress bar at `progress` (0..1), or hides it when negative.
+  void set_progress(double progress);
+  void set_playing(bool playing);
 
  private:
+  PreviewActions actions_;
   FrameView* view_ = nullptr;
   nanogui::Label* caption_ = nullptr;
+  nanogui::ProgressBar* progress_ = nullptr;
+  nanogui::Button* play_ = nullptr;
 };

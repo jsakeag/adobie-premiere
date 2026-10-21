@@ -14,6 +14,8 @@
 #include "filters_window.h"
 #include "frame_view.h"
 #include "key_window.h"
+#include "make_windows.h"
+#include "mpp/audio_mixer.h"
 #include "mpp/bin_commands.h"
 #include "mpp/image_io.h"
 #include "mpp/project_file.h"
@@ -73,7 +75,10 @@ App::App() : nanogui::Screen(nanogui::Vector2i(1440, 900), "Mock Premiere") {
   clip.focus = [this] { focus_ = Focus::Clip; };
   clip_window_ = new ClipWindow(this, std::move(clip));
 
-  preview_ = new PreviewWindow(this);
+  PreviewActions preview_actions;
+  preview_actions.play = [this] { preview(); };
+  preview_actions.stop = [this] { stop(); };
+  preview_ = new PreviewWindow(this, std::move(preview_actions));
 
   ConstructionActions timeline;
   timeline.set_edit_line = [this](std::int64_t f) { set_edit_line(f); };
@@ -176,6 +181,19 @@ std::vector<Menu> App::build_menus() {
         {"Filters...", "Cmd+F", [this, chosen_id] { edit_filters(chosen_id); }, chosen_id != 0},
     };
   }});
+  menus.push_back({"Make", [this] {
+    const bool program = project().duration() > 0;
+    return std::vector<MenuItem>{
+        {"Preview", "Return", [this] { preview(); }, program},
+        {"Stop", "Esc", [this] { stop(); },
+         rendering() || exporting() || playing_ != Playing::None},
+        {"", "", nullptr},
+        {"Movie...", "Cmd+M", [this] { open_export_dialog(); }, program && !exporting()},
+        {"Frame...", "", [this] { export_frame_dialog(); }},
+        {"", "", nullptr},
+        {"Print to Video...", "", [this] { print_to_video(); }, program},
+    };
+  }});
   menus.push_back({"Windows", [this] {
     const auto show = [this](nanogui::Window* w) {
       return [this, w] {
@@ -202,7 +220,9 @@ void App::new_project() {
 }
 
 void App::set_project(mpp::Project project, const std::string& name, const std::string& path) {
-  clip_stop();
+  stop();
+  rendered_.reset();
+  rendered_sound_.reset();
   editor_ = mpp::Editor(std::move(project));
   selected_item_ = 0;
   selection_.clear();
@@ -442,10 +462,11 @@ void App::clip_step(int frames) { clip_seek(clip_pos_ + frames); }
 void App::clip_toggle_play() {
   const mpp::MediaItem* item = project().item(clip_item_);
   if (!item) return;
-  if (clip_playing_) {
-    clip_stop();
+  if (playing_ == Playing::Clip) {
+    stop_playing();
     return;
   }
+  stop_playing();
   // Play to the out mark, or to the end if already past it; from the in
   // mark if sitting at the end.
   const std::int64_t length = clip_length();
@@ -457,31 +478,250 @@ void App::clip_toggle_play() {
   play_from_ = clip_pos_;
   play_clock_ = 0;
   play_last_time_ = -1;
-  clip_playing_ = true;
+  playing_ = Playing::Clip;
+  // The item's own sound, from here, timing the pictures.
+  sound_clock_ = false;
+  if (item->info.has_audio && !test_clock_) {
+    try {
+      const mpp::ProjectSettings& s = project().settings;
+      sound_clock_ = audio_.play(cache_.audio(item->path, s.audio_rate),
+                                 static_cast<std::size_t>(mpp::frame_to_sample(s, clip_pos_)));
+    } catch (const std::exception& e) {
+      message_ = e.what();
+    }
+  }
 }
 
 void App::clip_stop() {
-  clip_playing_ = false;
+  if (playing_ == Playing::Clip) stop_playing();
+}
+
+void App::stop_playing() {
+  audio_.stop();
+  sound_clock_ = false;
+  playing_ = Playing::None;
   play_last_time_ = -1;
+  program_index_ = -1;
+  if (fullscreen_) end_print_ = true;
+}
+
+void App::set_test_clock() {
+  test_clock_ = true;
+  audio_.set_enabled(false);
 }
 
 void App::advance_playback(double seconds) {
-  if (!clip_playing_) return;
+  if (playing_ == Playing::None) return;
   play_clock_ += seconds;
+  follow_clock();
+}
+
+void App::follow_clock() {
   const mpp::Rate rate = project().settings.rate;
-  const std::int64_t position = play_from_ + rate.frame_at(play_clock_);
-  if (position >= play_stop_) {
-    clip_pos_ = play_stop_ - 1;
-    clip_stop();
-  } else {
-    clip_pos_ = position;
+  const std::int64_t elapsed = rate.frame_at(play_clock_);
+  if (playing_ == Playing::Clip) {
+    const std::int64_t position = play_from_ + elapsed;
+    if (position >= play_stop_) {
+      clip_pos_ = play_stop_ - 1;
+      stop_playing();
+    } else {
+      clip_pos_ = position;
+    }
+  } else if (playing_ == Playing::Program && rendered_) {
+    const auto count = static_cast<std::int64_t>(rendered_->frames.size());
+    program_index_ = std::min(elapsed, count - 1);
+    edit_line_ = rendered_->first + program_index_;
+    if (elapsed >= count) stop_playing();
   }
 }
 
 void App::tick_playback(double now) {
-  if (!clip_playing_) return;
+  if (playing_ == Playing::None || test_clock_) return;
+  if (sound_clock_ && audio_.playing()) {
+    play_clock_ = audio_.position();
+    follow_clock();
+    return;
+  }
   if (play_last_time_ >= 0) advance_playback(now - play_last_time_);
   play_last_time_ = now;
+}
+
+std::pair<std::int64_t, std::int64_t> App::make_range(bool whole_program) const {
+  const mpp::Project& p = project();
+  if (!whole_program && p.work_out > p.work_in) return {p.work_in, p.work_out};
+  return {0, p.duration()};
+}
+
+void App::preview() {
+  if (playing_ == Playing::Program) {
+    stop_playing();
+    return;
+  }
+  const auto [first, last] = make_range(false);
+  if (last <= first) {
+    message_ = "There's nothing to preview: place some clips first";
+    return;
+  }
+  stop_playing();
+  // Play the last render if nothing has changed since; otherwise render.
+  if (rendered_ && rendered_changes_ == changes_ && rendered_->first == first &&
+      rendered_->first + static_cast<std::int64_t>(rendered_->frames.size()) == last) {
+    start_program(print_after_render_);
+    print_after_render_ = false;
+    return;
+  }
+  if (render_job_ && render_job_->first() == first && render_job_->last() == last &&
+      render_changes_ == changes_) {
+    return;  // already rendering this
+  }
+  // A preview lives in memory, frame by frame; keep it under about 2 GB.
+  const mpp::ProjectSettings& s = project().settings;
+  const double bytes = static_cast<double>(last - first) * s.width * s.height * 4;
+  if (bytes > 2e9) {
+    message_ = "The work area is too long to preview at this frame size; shorten it";
+    print_after_render_ = false;
+    return;
+  }
+  render_job_ = std::make_unique<mpp::RenderJob>(project(), first, last);
+  render_changes_ = changes_;
+  message_ = "Rendering " + std::to_string(last - first) + " frames (Esc cancels)";
+}
+
+void App::start_program(bool full_screen) {
+  if (!rendered_ || rendered_->frames.empty()) return;
+  playing_ = Playing::Program;
+  play_clock_ = 0;
+  play_last_time_ = -1;
+  program_index_ = 0;
+  edit_line_ = rendered_->first;
+  sound_clock_ = !test_clock_ && audio_.play(rendered_sound_, 0);
+  if (full_screen && !fullscreen_) {
+    fullscreen_ = new FullScreenView(this, [this] { end_print_ = true; });
+    fullscreen_->set_frame(rendered_->frames.front());
+  }
+  message_.clear();
+}
+
+void App::finish_render() {
+  std::unique_ptr<mpp::RenderJob> job = std::move(render_job_);
+  try {
+    mpp::RenderedProgram program = job->take();
+    rendered_sound_ = std::make_shared<const mpp::AudioBuffer>(std::move(program.audio));
+    rendered_ = std::make_shared<const mpp::RenderedProgram>(std::move(program));
+    rendered_changes_ = render_changes_;
+  } catch (const std::exception& e) {
+    message_ = e.what();
+    print_after_render_ = false;
+    return;
+  }
+  start_program(print_after_render_);
+  print_after_render_ = false;
+}
+
+double App::render_progress() const { return render_job_ ? render_job_->progress() : 1.0; }
+
+std::int64_t App::program_frame() const {
+  return playing_ == Playing::Program ? program_index_ : -1;
+}
+
+void App::stop() {
+  if (render_job_) {
+    render_job_.reset();  // cancels and waits
+    print_after_render_ = false;
+    message_ = "Render cancelled";
+  }
+  if (export_job_) {
+    export_job_->cancel();
+    finish_export();
+  }
+  stop_playing();
+}
+
+bool App::export_movie(const std::string& path, mpp::MovieFormat format, bool whole_program) {
+  if (export_job_) {
+    message_ = "Already making a movie";
+    return false;
+  }
+  const auto [first, last] = make_range(whole_program);
+  if (last <= first) {
+    message_ = "There's nothing to make a movie of";
+    return false;
+  }
+  std::string target = path;
+  const std::string ext = mpp::movie_extension(format);
+  if (target.size() < ext.size() || target.compare(target.size() - ext.size(), ext.size(), ext) != 0) {
+    target += ext;
+  }
+  export_job_ = std::make_unique<mpp::ExportJob>(project(), target, format, first, last);
+  message_ = "Making " + target + " (Esc cancels)";
+  return true;
+}
+
+double App::export_progress() const { return export_job_ ? export_job_->progress() : 1.0; }
+
+void App::finish_export() {
+  std::unique_ptr<mpp::ExportJob> job = std::move(export_job_);
+  const std::string error = job->wait();
+  message_ = error.empty() ? "Made " + job->path()
+             : error == "cancelled" ? "Movie cancelled"
+                                    : error;
+}
+
+void App::open_export_dialog() {
+  if (export_window_) return;
+  const mpp::Project& p = project();
+  export_window_ = new ExportWindow(this, p.work_out > p.work_in,
+                                    [this](mpp::MovieFormat format, bool whole) {
+    const std::vector<std::string> paths = nanogui::file_dialog(
+        this, nanogui::FileDialogType::Save,
+        {{std::string(mpp::movie_extension(format) + 1), mpp::movie_format_name(format)}});
+    if (!paths.empty()) export_movie(paths.front(), format, whole);
+  });
+  export_window_->set_closed_callback([this] { export_window_ = nullptr; });
+  perform_layout();
+  layout_widgets();
+  export_window_->set_position((m_size - export_window_->size()) / 2);
+  move_window_to_front(export_window_);
+}
+
+bool App::export_frame(const std::string& path) {
+  std::string target = path;
+  if (target.size() < 4 || target.compare(target.size() - 4, 4, ".png") != 0) target += ".png";
+  try {
+    mpp::save_png(mpp::render_frame(project(), cache_, edit_line_), target);
+  } catch (const std::exception& e) {
+    message_ = e.what();
+    return false;
+  }
+  message_ = "Saved the frame at " + mpp::format_timecode(edit_line_, project().settings.rate) +
+             " as " + target;
+  return true;
+}
+
+void App::export_frame_dialog() {
+  const std::vector<std::string> paths =
+      nanogui::file_dialog(this, nanogui::FileDialogType::Save, {{"png", "PNG"}});
+  if (!paths.empty()) export_frame(paths.front());
+}
+
+void App::print_to_video() {
+  print_after_render_ = true;
+  preview();
+  if (playing_ == Playing::Program && !fullscreen_) {
+    // preview() found a render and is playing it in the window; go full
+    // screen from the start.
+    stop_playing();
+    start_program(true);
+    print_after_render_ = false;
+  }
+}
+
+void App::end_print() {
+  end_print_ = false;
+  if (!fullscreen_) return;
+  if (playing_ == Playing::Program) stop_playing();
+  remove_child(fullscreen_);
+  fullscreen_ = nullptr;
 }
 
 void App::clip_mark_in() {
@@ -786,6 +1026,9 @@ mpp::Image App::thumbnail(int id) {
 }
 
 void App::refresh() {
+  if (render_job_ && render_job_->finished()) finish_render();
+  if (export_job_ && export_job_->finished()) finish_export();
+  if (end_print_) end_print();
   if (clip_item_ && !project().item(clip_item_)) {
     clip_stop();
     clip_item_ = 0;
@@ -818,7 +1061,7 @@ void App::show_clip() {
     state.in = item->in;
     state.out = item->out;
     state.length = clip_length();
-    state.playing = clip_playing_;
+    state.playing = playing_ == Playing::Clip;
     state.still = item->info.is_still();
     if (clip_shown_item_ != item->id || clip_shown_pos_ != clip_pos_) {
       clip_shown_item_ = item->id;
@@ -849,14 +1092,32 @@ void App::show_timeline() {
   }
   construction_->show(tool_, mpp::format_timecode(edit_line_, rate), info);
 
-  if (preview_shown_frame_ != edit_line_ || preview_shown_changes_ != changes_) {
+  // Playing shows the render; otherwise Preview renders the edit line.
+  if (playing_ == Playing::Program && rendered_ && program_index_ >= 0) {
+    const mpp::Image& frame = rendered_->frames[static_cast<std::size_t>(program_index_)];
+    if (preview_shown_frame_ != edit_line_) {
+      preview_->view()->set_frame(frame);
+      if (fullscreen_) fullscreen_->set_frame(frame);
+    }
+    preview_shown_frame_ = edit_line_;
+    preview_shown_changes_ = 0;  // redraw from the project when playback stops
+  } else if (preview_shown_frame_ != edit_line_ || preview_shown_changes_ != changes_) {
     preview_shown_frame_ = edit_line_;
     preview_shown_changes_ = changes_;
     preview_->view()->set_frame(mpp::render_frame(p, cache_, edit_line_));
-    preview_->set_caption_text(mpp::format_timecode(edit_line_, rate) + "   " +
-                               std::to_string(p.settings.width) + " x " +
-                               std::to_string(p.settings.height));
   }
+  std::string caption = mpp::format_timecode(edit_line_, rate) + "   " +
+                        std::to_string(p.settings.width) + " x " + std::to_string(p.settings.height);
+  if (render_job_) {
+    const auto done = static_cast<std::int64_t>(render_job_->progress() * (render_job_->last() - render_job_->first()));
+    caption = "Rendering " + std::to_string(done) + " of " +
+              std::to_string(render_job_->last() - render_job_->first()) + " frames";
+  } else if (playing_ == Playing::Program) {
+    caption += "   playing";
+  }
+  preview_->set_caption_text(caption);
+  preview_->set_progress(render_job_ ? render_job_->progress() : export_job_ ? export_job_->progress() : -1.0);
+  preview_->set_playing(playing_ == Playing::Program);
 }
 
 // ---- Events ---------------------------------------------------------------
@@ -864,8 +1125,9 @@ void App::show_timeline() {
 bool App::keyboard_event(int key, int scancode, int action, int modifiers) {
   if (nanogui::Screen::keyboard_event(key, scancode, action, modifiers)) return true;
   if (action != GLFW_PRESS && action != GLFW_REPEAT) return false;
-  if (key == GLFW_KEY_ESCAPE && menu_->open_index() >= 0) {
-    menu_->close();
+  if (key == GLFW_KEY_ESCAPE) {
+    if (menu_->open_index() >= 0) menu_->close();
+    else stop();
     return true;
   }
 
@@ -878,6 +1140,7 @@ bool App::keyboard_event(int key, int scancode, int action, int modifiers) {
         else save();
         return true;
       case GLFW_KEY_I: import_dialog(); return true;
+      case GLFW_KEY_M: open_export_dialog(); return true;
       case GLFW_KEY_Z: toggle_undo(); return true;
       case GLFW_KEY_A: select_all_clips(); return true;
       case GLFW_KEY_F:
@@ -893,10 +1156,13 @@ bool App::keyboard_event(int key, int scancode, int action, int modifiers) {
     case GLFW_KEY_DELETE:
     case GLFW_KEY_BACKSPACE: clear_selected(); return true;
     case GLFW_KEY_ENTER:
+    case GLFW_KEY_KP_ENTER:
       if (focus_ == Focus::Project) open_clip(selected_item_);
+      else preview();
       return true;
     case GLFW_KEY_SPACE:
-      if (!timeline) clip_toggle_play();
+      if (timeline) preview();
+      else clip_toggle_play();
       return true;
     case GLFW_KEY_I: clip_mark_in(); return true;
     case GLFW_KEY_O: clip_mark_out(); return true;
@@ -1024,4 +1290,5 @@ void App::layout_widgets() {
     perform_layout();
   }
   construction_->set_position({kMargin, m_size.y() - kStatusHeight - construction_->height() - 4});
+  if (fullscreen_) fullscreen_->fill_parent();
 }

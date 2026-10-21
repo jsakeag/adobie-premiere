@@ -5,17 +5,23 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <nanogui/screen.h>
 
+#include "audio_player.h"
 #include "construction_view.h"
 #include "menu_bar.h"
 #include "mpp/editor.h"
+#include "mpp/export_job.h"
 #include "mpp/media_cache.h"
+#include "mpp/render_job.h"
 
 class ClipWindow;
 class ConstructionWindow;
+class ExportWindow;
+class FullScreenView;
 class PreviewWindow;
 class ProjectWindow;
 class SettingsWindow;
@@ -69,7 +75,7 @@ class App : public nanogui::Screen {
   void open_clip(int id);
   int clip_item() const { return clip_item_; }
   std::int64_t clip_position() const { return clip_pos_; }
-  bool clip_playing() const { return clip_playing_; }
+  bool clip_playing() const { return playing_ == Playing::Clip; }
   void clip_seek(std::int64_t position);
   void clip_step(int frames);
   void clip_toggle_play();
@@ -77,9 +83,13 @@ class App : public nanogui::Screen {
   void clip_mark_out();
   void clip_go_to_in();
   void clip_go_to_out();
-  // Moves playback on as if `seconds` had passed (the self-test's clock;
-  // the app uses real time).
+  // Moves playback on as if `seconds` had passed. The app's clock is the
+  // sound device while sound plays, real time otherwise; with
+  // set_test_clock() only this moves it.
   void advance_playback(double seconds);
+  // For the self-test: playback moves only by advance_playback(), and no
+  // sound plays.
+  void set_test_clock();
 
   // Construction window.
   bool place(int item, mpp::Track track, std::int64_t start);
@@ -122,6 +132,32 @@ class App : public nanogui::Screen {
   TimelineTool tool() const { return tool_; }
   void zoom(int steps);
 
+  // Make. preview() renders the work area (or the whole program if there is
+  // none) in the background unless an up-to-date render exists, then plays
+  // it with sound from its start.
+  void preview();
+  void stop();  // playback, a render, an export or Print to Video
+  bool rendering() const { return render_job_ != nullptr; }
+  double render_progress() const;
+  bool program_playing() const { return playing_ == Playing::Program; }
+  // The rendered frame Preview shows while playing, as an index into the
+  // render; -1 when not playing.
+  std::int64_t program_frame() const;
+  // The range Make uses: the work area, or the whole program.
+  std::pair<std::int64_t, std::int64_t> make_range(bool whole_program) const;
+  // Make > Movie: starts writing the movie in the background.
+  bool export_movie(const std::string& path, mpp::MovieFormat format, bool whole_program);
+  bool exporting() const { return export_job_ != nullptr; }
+  double export_progress() const;
+  void open_export_dialog();
+  ExportWindow* export_window() const { return export_window_; }
+  // Make > Frame: the program at the edit line as a PNG.
+  bool export_frame(const std::string& path);
+  // Make > Print to Video: plays the work area full screen.
+  void print_to_video();
+  bool printing() const { return fullscreen_ != nullptr; }
+  FullScreenView* fullscreen() const { return fullscreen_; }
+
   // Project > Settings.
   void open_settings();
   SettingsWindow* settings_window() const { return settings_; }
@@ -152,6 +188,7 @@ class App : public nanogui::Screen {
 
  private:
   enum class Focus { Project, Clip, Timeline };
+  enum class Playing { None, Clip, Program };
 
   // Runs a command; on failure shows the error and leaves things as they
   // were. Returns whether it succeeded.
@@ -169,7 +206,15 @@ class App : public nanogui::Screen {
   // Length of the Clip window's scrub bar for the open item.
   std::int64_t clip_length() const;
   void clip_stop();
+  void stop_playing();
   void tick_playback(double now);
+  // Moves the clip or program playhead to the clock.
+  void follow_clock();
+  void start_program(bool full_screen);
+  void finish_render();
+  void finish_export();
+  void end_print();
+  void export_frame_dialog();
   mpp::Image thumbnail(int id);
   mpp::Image item_thumbnail(int item, std::int64_t position);
   // Brings the windows up to date. Widgets are rebuilt here, outside their
@@ -194,11 +239,26 @@ class App : public nanogui::Screen {
 
   int clip_item_ = 0;
   std::int64_t clip_pos_ = 0;
-  bool clip_playing_ = false;
+  Playing playing_ = Playing::None;
   double play_clock_ = 0;       // seconds of playback so far
   double play_last_time_ = -1;  // wall clock at the last tick
-  std::int64_t play_from_ = 0;  // position when play started
+  bool sound_clock_ = false;    // the sound device is timing playback
+  bool test_clock_ = false;
+  std::int64_t play_from_ = 0;  // clip position when play started
   std::int64_t play_stop_ = 0;  // stops before this position
+  AudioPlayer audio_;
+
+  // The work area as last rendered, and what the project looked like then.
+  std::shared_ptr<const mpp::RenderedProgram> rendered_;
+  std::shared_ptr<const mpp::AudioBuffer> rendered_sound_;
+  std::uint64_t rendered_changes_ = 0;
+  std::uint64_t render_changes_ = 0;  // changes_ when the running render began
+  std::unique_ptr<mpp::RenderJob> render_job_;
+  bool print_after_render_ = false;
+  std::int64_t program_index_ = -1;  // frame of rendered_ on show
+  std::unique_ptr<mpp::ExportJob> export_job_;
+  FullScreenView* fullscreen_ = nullptr;
+  bool end_print_ = false;  // a click asked Print to Video to stop
   int clip_shown_item_ = -1;    // what the Clip window's picture is
   std::int64_t clip_shown_pos_ = -1;
 
@@ -220,5 +280,6 @@ class App : public nanogui::Screen {
   TransitionSettingsWindow* transition_settings_ = nullptr;
   TransparencyWindow* transparency_ = nullptr;
   FiltersWindow* filters_window_ = nullptr;
+  ExportWindow* export_window_ = nullptr;
   nanogui::Label* status_ = nullptr;
 };

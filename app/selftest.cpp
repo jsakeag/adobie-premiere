@@ -1,6 +1,9 @@
 #include "selftest.h"
 
+#include <chrono>
 #include <cstdio>
+#include <functional>
+#include <thread>
 #include <cstdlib>
 #include <exception>
 #include <string>
@@ -18,6 +21,10 @@
 #include "settings_window.h"
 #include "timeline_windows.h"
 #include "key_window.h"
+#include "make_windows.h"
+#include "mpp/ffmpeg_source.h"
+#include "mpp/image_io.h"
+#include "mpp/renderer.h"
 #include "transition_windows.h"
 
 namespace {
@@ -35,6 +42,7 @@ int run_selftest(const std::string& out_dir, const std::string& fixtures) {
   nanogui::init();
   {
     nanogui::ref<App> app = new App();
+    app->set_test_clock();  // silent, and playback moves only when told
     app->set_visible(true);
     for (int i = 0; i < 5; ++i) glfwPollEvents();
     const auto project = [&]() -> const mpp::Project& { return app->project(); };
@@ -424,6 +432,92 @@ int run_selftest(const std::string& out_dir, const std::string& fixtures) {
           "the sound clip has Backwards and a Pan sweep");
     app->toggle_undo();
     check(project().clip_at(mpp::Track::AudioA, 210)->filters.empty(), "undo removes them");
+
+    // Milestone 6: preview, playback and making movies.
+    const auto wait_for = [&](const std::function<bool()>& busy) {
+      for (int i = 0; i < 3000 && busy(); ++i) {
+        app->draw_all();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
+      app->draw_all();
+    };
+    app->new_project();
+    {
+      mpp::ProjectSettings s = project().settings;
+      s.width = 160;
+      s.height = 120;
+      s.rate = {15, 1, false};
+      s.audio_bits = 8;
+      app->apply_settings(s);  // Premiere 1.0's size, rate and sound
+    }
+    app->import(media("counter.mov"));
+    app->import(media("still.png"));
+    app->place(project().bin[0].id, mpp::Track::VideoA, 0);
+    app->place(project().bin[1].id, mpp::Track::VideoB, 20);
+    app->add_transition("cross_dissolve", 25);
+    app->set_work_area(0, 30);
+    app->preview();
+    check(app->rendering(), "Make > Preview starts rendering the work area");
+    shot("26_rendering");
+    wait_for([&] { return app->rendering(); });
+    check(!app->rendering() && app->program_playing() && app->program_frame() == 0,
+          "when the render is done it plays from the start");
+    mpp::MediaCache check_cache;
+    app->advance_playback(1.0);
+    app->draw_all();
+    check(app->program_frame() == 15 && app->edit_line() == 15, "a second later it shows frame 15");
+    check(app->preview_window()->view()->frame() == mpp::render_frame(project(), check_cache, 15),
+          "Preview shows the rendered frame");
+    shot("27_playing");
+    app->advance_playback(5.0);
+    app->draw_all();
+    check(!app->program_playing() && app->edit_line() == 29, "it stops on the last frame");
+    app->preview();
+    check(!app->rendering() && app->program_playing(), "with nothing changed it plays without rendering");
+    app->stop();
+    app->set_work_area(5, 30);
+    app->preview();
+    check(app->rendering(), "after a change it renders again");
+    app->stop();
+    check(!app->rendering() && app->message() == "Render cancelled", "Esc cancels a render");
+
+    // Make > Movie, as a lossless QuickTime of the whole program.
+    app->menu_bar()->open(4);
+    shot("28_make_menu");
+    app->menu_bar()->close();
+    app->open_export_dialog();
+    check(app->export_window() != nullptr, "Make > Movie... opens its dialog");
+    shot("29_make_movie");
+    if (app->export_window()) app->export_window()->cancel();
+    const std::string movie_path = out_dir + "/selftest_movie";
+    check(app->export_movie(movie_path, mpp::MovieFormat::Animation, true), "export starts");
+    wait_for([&] { return app->exporting(); });
+    check(app->message() == "Made " + movie_path + ".mov", "and finishes");
+    try {
+      mpp::FfmpegSource made(movie_path + ".mov");
+      check(made.info().frames == project().duration() && made.info().has_audio,
+            "the movie has every frame and sound");
+      check(made.frame(25) == mpp::render_frame(project(), check_cache, 25),
+            "and its frames are exactly the program's");
+    } catch (const std::exception& e) {
+      check(false, e.what());
+    }
+
+    app->set_edit_line(27);
+    check(app->export_frame(out_dir + "/selftest_frame"), "Make > Frame saves a PNG");
+    check(mpp::load_image(out_dir + "/selftest_frame.png") == mpp::render_frame(project(), check_cache, 27),
+          "of the frame at the edit line");
+
+    // Print to Video plays the work area full screen.
+    app->print_to_video();
+    wait_for([&] { return app->rendering(); });
+    check(app->printing() && app->program_playing(), "Print to Video plays full screen");
+    app->advance_playback(0.5);
+    app->draw_all();
+    shot("30_print_to_video");
+    app->stop();
+    app->draw_all();
+    check(!app->printing(), "Esc ends it");
   }
   nanogui::shutdown();
   std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "PASSED", failures);

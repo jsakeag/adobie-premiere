@@ -1,8 +1,10 @@
 add_library(mpp_core STATIC
+  src/audio_mixer.cpp
   src/bin_commands.cpp
   src/command.cpp
   src/compositing.cpp
   src/editor.cpp
+  src/export_job.cpp
   src/ffmpeg_source.cpp
   src/filters.cpp
   src/image.cpp
@@ -10,9 +12,11 @@ add_library(mpp_core STATIC
   src/keys.cpp
   src/media.cpp
   src/media_cache.cpp
+  src/movie_writer.cpp
   src/project.cpp
   src/project_file.cpp
   src/rate.cpp
+  src/render_job.cpp
   src/renderer.cpp
   src/resample.cpp
   src/time_scale.cpp

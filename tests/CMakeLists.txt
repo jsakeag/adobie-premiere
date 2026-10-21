@@ -10,13 +10,16 @@ FetchContent_MakeAvailable(Catch2)
 
 add_executable(mpp_tests
   golden.cpp
+  test_audio_mixer.cpp
   test_bin_commands.cpp
   test_ffmpeg_source.cpp
   test_filters.cpp
   test_keys.cpp
   test_media_cache.cpp
+  test_movie_writer.cpp
   test_project_file.cpp
   test_rate.cpp
+  test_render_job.cpp
   test_renderer.cpp
   test_resample.cpp
   test_time_scale.cpp

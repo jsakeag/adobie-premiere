@@ -2,7 +2,7 @@
 
 A desktop video editor modeled on Adobe Premiere 1.0-2.0 (1991-1992), written in C++17. The core is headless; a thin NanoGUI app shows it. Sister project to `mock-photoshop`. See [CLAUDE.md](CLAUDE.md) for the plan and architecture, [FEATURES.md](FEATURES.md) for the feature list and [STACK.md](STACK.md) for the libraries.
 
-**Status:** milestones 1-5 of 10 are done: importing media, the Project and Clip windows, the Construction window (placing, moving, trimming, cutting and deleting clips on A/B, Super and three audio tracks), the Preview window, saving projects, 24 transitions, the Super track with transparency keys, rubber-band fades, and video and audio filters.
+**Status:** milestones 1-6 of 10 are done: importing media, the Project and Clip windows, the Construction window (placing, moving, trimming, cutting and deleting clips on A/B, Super and three audio tracks), the Preview window, saving projects, 24 transitions, the Super track with transparency keys, rubber-band fades, video and audio filters, rendered previews with sound, and making movies. That completes Premiere 1.0's feature set; milestones 7-10 add Premiere 2.0's.
 
 ## Build and test
 
@@ -38,7 +38,7 @@ Test media lives in `tests/fixtures/`; `tests/fixtures/make_fixtures.sh` rebuild
   - The buttons go to the in mark, back one frame, play/stop, forward one frame, and to the out mark. Keys: Space plays and stops, Left and Right step, Home and End go to the marks.
   - **Mark In** (I) and **Mark Out** (O) set the range that will be used when the clip is placed in a program. The out mark keeps the frame you're on.
   - Type a timecode into the box next to the buttons and press Return to jump there.
-  - Playback runs to the out mark, or to the end of the clip if you start past it. There's no sound yet (milestone 6).
+  - Playback runs to the out mark, or to the end of the clip if you start past it, with the clip's sound.
 - **Construction window** (along the bottom): the program, from left to right in time.
   - Tracks, top to bottom: **Video A**, **T** (transitions), **Video B**, **Super** (a picture laid over the program), and **Audio A, B and C**. Where Video A has a clip it shows; elsewhere Video B does; a Super clip goes on top of either.
   - **Double-click** a clip to open its file in the Clip window, or, on the Super track, to open its Transparency settings.
@@ -55,9 +55,16 @@ Test media lives in `tests/fixtures/`; `tests/fixtures/make_fixtures.sh` rebuild
 - **Rubber bands:** the red line across each Super and sound clip is its opacity or volume, top for 100% and bottom for 0%. Drag the line to add a handle and pull it where you want it; drag a handle to move it (between its neighbours); drag a handle well above or below the track to remove it. Between handles the level changes in a straight line. Handles belong to the clip's source, so they stay with the picture or sound when you trim.
 - **Filters:** select one clip and choose Clip > **Filters...** (Cmd+F). The list on the left is the clip's filters, applied top to bottom; pick one from the menu and press **Add**, or select one and use **Remove**, **Up** and **Down**. Each setting has a **Start** value (the clip's first frame) and an **End** value (its last); in between the value changes steadily, so a filter can fade in, sweep or ramp. The previews show the first and last frames with every filter applied. OK applies the whole list as one undoable step.
   - Video filters (24): Brightness & Contrast, Levels, Gamma Correction, Hue & Saturation, Color Balance, Tint, Black & White, Invert, Posterize, Threshold, Solarize, Gaussian Blur, Camera Blur, Motion Blur, Sharpen, Emboss, Find Edges, Mosaic, Add Noise (new grain every frame), Ripple, Replicate, Crop (to transparent), Horizontal Flip, Vertical Flip. Sizes in pixels mean pixels of the project's frame.
-  - Sound clips get the audio filters instead: Echo, Pan (sweeps from its start to its end position), Backwards, Fill Left (the left channel in both speakers) and Fill Right. You'll hear them once playback has sound (milestone 6).
+  - Sound clips get the audio filters instead: Echo, Pan (sweeps from its start to its end position), Backwards, Fill Left (the left channel in both speakers) and Fill Right. You hear them in previews and movies.
   - A clip's picture and its linked sound have separate filter lists. A razor cut gives both halves the same filters, each running start to end over its own length.
-- **Preview window:** the program at the edit line, at the project's frame size.
+- **Preview window:** the program at the edit line, at the project's frame size. Its buttons are Play (render and play, below) and Stop.
+- **Make menu:**
+  - **Preview** (Return, or Space with the Construction window clicked last, or the Preview window's Play button): renders the work area (the whole program if there's no work area) in the background, with a progress bar in the Preview window, then plays it from its start with sound, in time with the sound. As in Premiere 1.0 this isn't real-time playback: the render comes first. Playing again with nothing changed skips straight to playback. The render is held in memory, so very long work areas at large frame sizes are refused.
+  - **Stop** (Esc): stops playback, or cancels a render or a movie in progress.
+  - **Movie...** (Cmd+M): choose **H.264 movie (.mp4)** (H.264 picture, AAC sound) or **QuickTime Animation (.mov)** (lossless picture, PCM sound; an 8-bit project's sound stays 8-bit), and the work area or the entire program, then where to save. It's written in the background at the project's frame size, rate and sound format, with progress in the Preview window. H.264 needs an even frame width and height.
+  - **Frame...**: saves the picture at the edit line as a PNG.
+  - **Print to Video...**: plays the work area full screen on black, as Premiere played a program out to a video recorder. Click or press Esc to stop.
+- **Sound** comes from Audio A, B and C, each clip with its audio filters and volume rubber band, mixed and then rounded to the project's sound format: Project > Settings offers Premiere 1.0's 8-bit sound and 2.0's 16-bit 44.1 kHz.
 - **Transitions window** (top right): the 24 transitions. Each icon shows the transition on a sample "A" and "B"; hold the mouse over one to watch it play.
   - Dissolves: Cross, Additive, Dither, Non-Additive. Wipes: Wipe, Barn Doors, Band Wipe, Checkerboard, Clock Wipe, Venetian Blinds, Random Blocks, Inset. Irises: Round, Square, Diamond, Cross. Slides: Push, Slide, Split, Center Split, Center Merge, Swap. Plus Zoom and Stretch. (Premiere 1.0 also had 24; which 24 isn't documented anywhere I could find, so these are a plausible set.)
   - **Adding one:** drag it onto the **T** track. Over a stretch where Video A and Video B clips overlap, it fills the overlap and points from the clip that ends first to the other. Elsewhere it lasts one second. Transitions can't overlap each other.
