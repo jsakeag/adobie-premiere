@@ -19,6 +19,8 @@ class ConstructionWindow;
 class PreviewWindow;
 class ProjectWindow;
 class SettingsWindow;
+class TransitionSettingsWindow;
+class TransitionsWindow;
 namespace nanogui {
 class Label;
 class MessageDialog;
@@ -85,12 +87,23 @@ class App : public nanogui::Screen {
   std::int64_t edit_line() const { return edit_line_; }
   // Moves the edit line to the previous or next clip edge.
   void jump_to_edit(int direction);
-  void select_clips(std::vector<int> clips);
-  const std::vector<int>& selected_clips() const { return selected_clips_; }
+  // The selection holds clip and transition ids.
+  void select(std::vector<int> ids);
+  const std::vector<int>& selection() const { return selection_; }
   void move_clip(int clip, mpp::Track track, std::int64_t start);
   void trim_clip(int clip, std::int64_t start, std::int64_t in, std::int64_t out);
   void razor(int clip, std::int64_t frame);
   void set_work_area(std::int64_t in, std::int64_t out);
+
+  // Transitions.
+  // A transition dragged from the Transitions window to a screen position;
+  // `released` drops it on the T track.
+  void drag_transition(const std::string& kind, nanogui::Vector2i at, bool released);
+  bool add_transition(const std::string& kind, std::int64_t frame);
+  void set_transition_span(int id, std::int64_t start, std::int64_t length);
+  // Opens the settings dialog for a transition; OK applies them.
+  void edit_transition(int id);
+  TransitionSettingsWindow* transition_settings() const { return transition_settings_; }
   void set_tool(TimelineTool tool);
   TimelineTool tool() const { return tool_; }
   void zoom(int steps);
@@ -105,6 +118,7 @@ class App : public nanogui::Screen {
   ProjectWindow* project_window() const { return project_window_; }
   ConstructionWindow* construction_window() const { return construction_; }
   PreviewWindow* preview_window() const { return preview_; }
+  TransitionsWindow* transitions_window() const { return transitions_; }
   bool discard_prompt_open() const { return prompt_ != nullptr; }
   void answer_discard_prompt(bool discard);
 
@@ -175,7 +189,7 @@ class App : public nanogui::Screen {
   std::int64_t clip_shown_pos_ = -1;
 
   std::int64_t edit_line_ = 0;
-  std::vector<int> selected_clips_;
+  std::vector<int> selection_;  // clip and transition ids
   TimelineTool tool_ = TimelineTool::Select;
   std::int64_t preview_shown_frame_ = -1;  // what the Preview window shows
   std::uint64_t preview_shown_changes_ = 0;
@@ -188,5 +202,7 @@ class App : public nanogui::Screen {
   PreviewWindow* preview_ = nullptr;
   ConstructionWindow* construction_ = nullptr;
   SettingsWindow* settings_ = nullptr;
+  TransitionsWindow* transitions_ = nullptr;
+  TransitionSettingsWindow* transition_settings_ = nullptr;
   nanogui::Label* status_ = nullptr;
 };

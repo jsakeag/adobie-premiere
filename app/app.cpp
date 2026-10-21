@@ -22,6 +22,7 @@
 #include "project_window.h"
 #include "settings_window.h"
 #include "timeline_windows.h"
+#include "transition_windows.h"
 
 namespace {
 
@@ -74,25 +75,34 @@ App::App() : nanogui::Screen(nanogui::Vector2i(1440, 900), "Mock Premiere") {
 
   ConstructionActions timeline;
   timeline.set_edit_line = [this](std::int64_t f) { set_edit_line(f); };
-  timeline.select = [this](std::vector<int> c) { select_clips(std::move(c)); };
+  timeline.select = [this](std::vector<int> ids) { select(std::move(ids)); };
   timeline.move = [this](int c, mpp::Track t, std::int64_t s) { move_clip(c, t, s); };
   timeline.trim = [this](int c, std::int64_t s, std::int64_t i, std::int64_t o) {
     trim_clip(c, s, i, o);
   };
   timeline.razor = [this](int c, std::int64_t f) { razor(c, f); };
   timeline.set_work_area = [this](std::int64_t i, std::int64_t o) { set_work_area(i, o); };
+  timeline.set_transition_span = [this](int id, std::int64_t s, std::int64_t l) {
+    set_transition_span(id, s, l);
+  };
+  timeline.edit_transition = [this](int id) { edit_transition(id); };
   timeline.focus = [this] { focus_ = Focus::Timeline; };
   timeline.thumbnail = [this](int item, std::int64_t pos) { return item_thumbnail(item, pos); };
   ConstructionToolbarActions toolbar;
   toolbar.set_tool = [this](TimelineTool t) { set_tool(t); };
   toolbar.zoom = [this](int steps) { zoom(steps); };
   construction_ = new ConstructionWindow(this, std::move(timeline), std::move(toolbar));
+  transitions_ = new TransitionsWindow(
+      this, [this](const std::string& kind, nanogui::Vector2i at, bool released) {
+        drag_transition(kind, at, released);
+      });
 
   status_ = new nanogui::Label(this, "");
   const int top = MenuBar::kHeight + kMargin;
   project_window_->set_position({kMargin, top});
   clip_window_->set_position({440, top});
   preview_->set_position({790, top});
+  transitions_->set_position({1150, top});
   layout_widgets();
   set_project(mpp::Project(), "Untitled", "");
 }
@@ -116,7 +126,7 @@ std::vector<Menu> App::build_menus() {
     const std::string undo = editor_.can_redo()   ? "Redo " + editor_.redo_name()
                              : editor_.can_undo() ? "Undo " + editor_.undo_name()
                                                   : "Undo";
-    const bool clips = focus_ == Focus::Timeline && !selected_clips_.empty();
+    const bool clips = focus_ == Focus::Timeline && !selection_.empty();
     return std::vector<MenuItem>{
         {undo, "Cmd+Z", [this] { toggle_undo(); }, editor_.can_undo() || editor_.can_redo()},
         {"", "", nullptr},
@@ -138,6 +148,8 @@ std::vector<Menu> App::build_menus() {
   }});
   menus.push_back({"Clip", [this] {
     const bool open = clip_item_ != 0;
+    const int transition =
+        selection_.size() == 1 && project().transition(selection_[0]) ? selection_[0] : 0;
     return std::vector<MenuItem>{
         {"Open in Clip Window", "Return", [this] { open_clip(selected_item_); },
          selected_item_ != 0},
@@ -148,6 +160,9 @@ std::vector<Menu> App::build_menus() {
         {"Mark Out", "O", [this] { clip_mark_out(); }, open},
         {"Go to In", "Home", [this] { clip_go_to_in(); }, open},
         {"Go to Out", "End", [this] { clip_go_to_out(); }, open},
+        {"", "", nullptr},
+        {"Transition Settings...", "", [this, transition] { edit_transition(transition); },
+         transition != 0},
     };
   }});
   menus.push_back({"Windows", [this] {
@@ -162,6 +177,7 @@ std::vector<Menu> App::build_menus() {
         {"Clip", "", show(clip_window_), true, clip_window_->visible()},
         {"Preview", "", show(preview_), true, preview_->visible()},
         {"Construction", "", show(construction_), true, construction_->visible()},
+        {"Transitions", "", show(transitions_), true, transitions_->visible()},
     };
   }});
   return menus;
@@ -178,7 +194,7 @@ void App::set_project(mpp::Project project, const std::string& name, const std::
   clip_stop();
   editor_ = mpp::Editor(std::move(project));
   selected_item_ = 0;
-  selected_clips_.clear();
+  selection_.clear();
   clip_item_ = 0;
   clip_pos_ = 0;
   clip_shown_item_ = -1;
@@ -335,8 +351,8 @@ void App::toggle_undo() {
 }
 
 void App::clear_selected() {
-  if (focus_ == Focus::Timeline && !selected_clips_.empty()) {
-    if (run(std::make_unique<mpp::DeleteClipsCommand>(selected_clips_))) selected_clips_.clear();
+  if (focus_ == Focus::Timeline && !selection_.empty()) {
+    if (run(std::make_unique<mpp::ClearCommand>(selection_))) selection_.clear();
     return;
   }
   if (selected_item_ == 0) return;
@@ -351,8 +367,9 @@ void App::clear_selected() {
 }
 
 void App::select_all_clips() {
-  selected_clips_.clear();
-  for (const mpp::Clip& c : project().clips) selected_clips_.push_back(c.id);
+  selection_.clear();
+  for (const mpp::Clip& c : project().clips) selection_.push_back(c.id);
+  for (const mpp::Transition& t : project().transitions) selection_.push_back(t.id);
   focus_ = Focus::Timeline;
 }
 
@@ -492,9 +509,9 @@ bool App::place(int item_id, mpp::Track track, std::int64_t start) {
   if (!run(std::make_unique<mpp::PlaceClipCommand>(item_id, track, start, item->in, item->out))) {
     return false;
   }
-  selected_clips_.clear();
+  selection_.clear();
   for (const mpp::Clip& c : project().clips) {
-    if (c.id >= first_new) selected_clips_.push_back(c.id);
+    if (c.id >= first_new) selection_.push_back(c.id);
   }
   focus_ = Focus::Timeline;
   message_ = "Placed " + name + " on " + mpp::track_name(track);
@@ -548,8 +565,8 @@ void App::jump_to_edit(int direction) {
   }
 }
 
-void App::select_clips(std::vector<int> clips) {
-  selected_clips_ = std::move(clips);
+void App::select(std::vector<int> ids) {
+  selection_ = std::move(ids);
   focus_ = Focus::Timeline;
 }
 
@@ -562,17 +579,83 @@ void App::trim_clip(int clip, std::int64_t start, std::int64_t in, std::int64_t 
 }
 
 void App::razor(int clip, std::int64_t frame) {
-  if (run(std::make_unique<mpp::RazorCommand>(clip, frame))) selected_clips_.clear();
+  if (run(std::make_unique<mpp::RazorCommand>(clip, frame))) selection_.clear();
 }
 
 void App::set_work_area(std::int64_t in, std::int64_t out) {
   run(std::make_unique<mpp::SetWorkAreaCommand>(in, out));
 }
 
+void App::drag_transition(const std::string& kind, nanogui::Vector2i at, bool released) {
+  ConstructionView* view = construction_->view();
+  const auto frame = view->transition_drop_frame(at);
+  if (!released) {
+    if (frame) {
+      const mpp::TransitionSpan span =
+          mpp::suggest_transition_span(project(), *frame, project().settings.rate.nominal());
+      view->show_transition_drop(span.start, span.length);
+    } else {
+      view->show_transition_drop(0, 0);
+    }
+    return;
+  }
+  view->show_transition_drop(0, 0);
+  if (frame) add_transition(kind, *frame);
+}
+
+bool App::add_transition(const std::string& kind, std::int64_t frame) {
+  // Fits the A/B overlap there, or lasts a second.
+  const mpp::TransitionSpan span =
+      mpp::suggest_transition_span(project(), frame, project().settings.rate.nominal());
+  mpp::TransitionSettings settings;
+  settings.b_to_a = span.b_to_a;
+  const int id = project().next_id;
+  if (!run(std::make_unique<mpp::AddTransitionCommand>(kind, span.start, span.length, settings))) {
+    return false;
+  }
+  selection_ = {id};
+  focus_ = Focus::Timeline;
+  if (const mpp::TransitionDef* def = mpp::find_transition(kind)) {
+    message_ = "Added " + def->name;
+  }
+  return true;
+}
+
+void App::set_transition_span(int id, std::int64_t start, std::int64_t length) {
+  run(std::make_unique<mpp::SetTransitionSpanCommand>(id, start, length));
+}
+
+void App::edit_transition(int id) {
+  const mpp::Transition* t = project().transition(id);
+  const mpp::TransitionDef* def = t ? mpp::find_transition(t->kind) : nullptr;
+  if (!def || transition_settings_) return;
+  // Preview with the real pictures from the middle of the transition, or
+  // the sample A and B when the tracks are empty there.
+  const mpp::ProjectSettings& s = project().settings;
+  const std::int64_t middle = t->start + t->length / 2;
+  const int w = 160, h = std::max(1, 160 * s.height / s.width);
+  mpp::Image a = project().clip_at(mpp::Track::VideoA, middle)
+                     ? mpp::resized(mpp::track_picture(project(), cache_, mpp::Track::VideoA, middle), w, h)
+                     : sample_a(w, h);
+  mpp::Image b = project().clip_at(mpp::Track::VideoB, middle)
+                     ? mpp::resized(mpp::track_picture(project(), cache_, mpp::Track::VideoB, middle), w, h)
+                     : sample_b(w, h);
+  transition_settings_ = new TransitionSettingsWindow(
+      this, *def, t->settings, std::move(a), std::move(b),
+      [this, id](const mpp::TransitionSettings& settings) {
+        run(std::make_unique<mpp::SetTransitionSettingsCommand>(id, settings));
+      });
+  transition_settings_->set_closed_callback([this] { transition_settings_ = nullptr; });
+  perform_layout();
+  layout_widgets();
+  transition_settings_->set_position((m_size - transition_settings_->size()) / 2);
+  move_window_to_front(transition_settings_);
+}
+
 void App::set_tool(TimelineTool tool) {
   tool_ = tool;
   // Now rather than on the next draw, so a click right after uses it.
-  construction_->view()->set_state(project(), edit_line_, selected_clips_, tool_);
+  construction_->view()->set_state(project(), edit_line_, selection_, tool_);
 }
 
 void App::zoom(int steps) { construction_->view()->zoom(steps); }
@@ -583,6 +666,7 @@ void App::open_settings() {
   if (settings_) return;
   settings_ = new SettingsWindow(this, project().settings,
                                  [this](const mpp::ProjectSettings& s) { apply_settings(s); });
+  settings_->set_closed_callback([this] { settings_ = nullptr; });
   perform_layout();
   layout_widgets();
   settings_->set_position((m_size - settings_->size()) / 2);
@@ -590,7 +674,6 @@ void App::open_settings() {
 }
 
 void App::apply_settings(const mpp::ProjectSettings& settings) {
-  settings_ = nullptr;  // the window closed itself
   if (settings == project().settings) return;
   const double scale = settings.rate.fps() / project().settings.rate.fps();
   if (run(std::make_unique<mpp::SetSettingsCommand>(settings))) {
@@ -629,10 +712,11 @@ void App::refresh() {
     clip_item_ = 0;
   }
   if (selected_item_ && !project().item(selected_item_)) selected_item_ = 0;
-  selected_clips_.erase(std::remove_if(selected_clips_.begin(), selected_clips_.end(),
-                                       [this](int id) { return !project().clip(id); }),
-                        selected_clips_.end());
-  if (settings_ && !settings_->parent()) settings_ = nullptr;  // cancelled
+  selection_.erase(std::remove_if(selection_.begin(), selection_.end(),
+                                  [this](int id) {
+                                    return !project().clip(id) && !project().transition(id);
+                                  }),
+                   selection_.end());
   if (bin_stale_) {
     bin_stale_ = false;
     project_window_->refresh(project(), selected_item_);
@@ -674,15 +758,15 @@ void App::show_clip() {
 void App::show_timeline() {
   const mpp::Project& p = project();
   const mpp::Rate rate = p.settings.rate;
-  construction_->view()->set_state(p, edit_line_, selected_clips_, tool_);
+  construction_->view()->set_state(p, edit_line_, selection_, tool_);
 
   std::string info = "Program " + mpp::format_timecode(p.duration(), rate);
   if (p.work_out > p.work_in) {
     info += "    Work area " + mpp::format_timecode(p.work_in, rate) + " - " +
             mpp::format_timecode(p.work_out, rate);
   }
-  if (!selected_clips_.empty()) {
-    info += "    " + std::to_string(selected_clips_.size()) + " selected";
+  if (!selection_.empty()) {
+    info += "    " + std::to_string(selection_.size()) + " selected";
   }
   construction_->show(tool_, mpp::format_timecode(edit_line_, rate), info);
 

@@ -153,9 +153,22 @@ ConstructionView::Hit ConstructionView::hit(const Vector2i& local) const {
   Hit h;
   if (!project_) return h;
   const auto row = row_at(local.y());
+  const double x = timeline_x(local.x());
+  if (row == Row::Transition) {
+    for (const mpp::Transition& t : project_->transitions) {
+      const double x0 = scale_.x_of(static_cast<double>(t.start));
+      const double x1 = scale_.x_of(static_cast<double>(t.end()));
+      if (x < x0 || x >= x1) continue;
+      h.transition = &t;
+      const double zone = std::min<double>(kTrimZone, (x1 - x0) / 3);
+      h.head = x < x0 + zone;
+      h.tail = x >= x1 - zone;
+      return h;
+    }
+    return h;
+  }
   const auto track = row ? track_of(*row) : std::nullopt;
   if (!track) return h;
-  const double x = timeline_x(local.x());
   for (const Clip& c : project_->clips) {
     if (c.track != *track) continue;
     const double x0 = scale_.x_of(static_cast<double>(c.start));
@@ -195,12 +208,34 @@ void ConstructionView::show_drop(std::optional<DropTarget> target, std::int64_t 
   drop_length_ = length;
 }
 
+std::optional<std::int64_t> ConstructionView::transition_drop_frame(const Vector2i& screen) const {
+  const Vector2i local = screen - absolute_position();
+  if (local.x() < kHeaderWidth || local.x() >= m_size.x()) return std::nullopt;
+  if (row_at(local.y()) != Row::Transition) return std::nullopt;
+  return std::max<std::int64_t>(0, scale_.frame_at(timeline_x(local.x())));
+}
+
+void ConstructionView::show_transition_drop(std::int64_t start, std::int64_t length) {
+  transition_drop_start_ = start;
+  transition_drop_length_ = length;
+}
+
+bool ConstructionView::is_selected(int id) const {
+  return std::find(selected_.begin(), selected_.end(), id) != selected_.end();
+}
+
 Vector2i ConstructionView::point_at(Track track, std::int64_t frame) const {
   // A quarter of a frame in: inside the frame, and nearest its left edge.
   const Row row = row_of(track);
   return absolute_position() +
          Vector2i(static_cast<int>(std::lround(local_x_of(frame + 0.25))),
                   row_top(row) + row_height(row) / 2);
+}
+
+Vector2i ConstructionView::transition_point(std::int64_t frame) const {
+  return absolute_position() +
+         Vector2i(static_cast<int>(std::lround(local_x_of(frame + 0.25))),
+                  row_top(Row::Transition) + row_height(Row::Transition) / 2);
 }
 
 Vector2i ConstructionView::ruler_point(std::int64_t frame) const {
@@ -253,6 +288,20 @@ bool ConstructionView::mouse_button_event(const Vector2i& p, int button, bool do
       return true;
     }
     const Hit h = hit(local);
+    if (h.transition) {
+      const int id = h.transition->id;
+      if (actions_.select && !is_selected(id)) actions_.select({id});
+      if (modifiers & nanogui::MOD_DOUBLE_CLICK) {
+        if (actions_.edit_transition) actions_.edit_transition(id);
+        return true;
+      }
+      drag_clip_ = id;
+      drag_start_ = h.transition->start;
+      drag_length_ = h.transition->length;
+      grab_offset_ = scale_.boundary_at(x) - static_cast<double>(h.transition->start);
+      drag_ = h.head ? Drag::TransitionHead : h.tail ? Drag::TransitionTail : Drag::TransitionMove;
+      return true;
+    }
     if (!h.clip) {
       if (actions_.select) actions_.select({});
       return true;
@@ -309,6 +358,16 @@ bool ConstructionView::mouse_button_event(const Vector2i& p, int button, bool do
         actions_.move(drag_clip_, drag_track_, drag_start_);
       }
       break;
+    case Drag::TransitionMove:
+    case Drag::TransitionHead:
+    case Drag::TransitionTail: {
+      const mpp::Transition* t = project_->transition(drag_clip_);
+      if (moved_ && t && (drag_start_ != t->start || drag_length_ != t->length) &&
+          actions_.set_transition_span) {
+        actions_.set_transition_span(drag_clip_, drag_start_, drag_length_);
+      }
+      break;
+    }
     case Drag::TrimHead:
     case Drag::TrimTail:
       if (moved_ && clip && (drag_start_ != clip->start || drag_in_ != clip->in ||
@@ -375,6 +434,28 @@ bool ConstructionView::mouse_drag_event(const Vector2i& p, const Vector2i& rel, 
       drag_start_ = std::max<std::int64_t>(0, mpp::snap_span(start, clip->length(), points, tolerance));
       break;
     }
+    case Drag::TransitionMove:
+    case Drag::TransitionHead:
+    case Drag::TransitionTail: {
+      const mpp::Transition* t = project_->transition(drag_clip_);
+      if (!t) break;
+      const auto points = mpp::snap_points(*project_, edit_line_, {t->id});
+      if (drag_ == Drag::TransitionMove) {
+        const std::int64_t start =
+            std::max<std::int64_t>(0, boundary - static_cast<std::int64_t>(grab_offset_));
+        drag_start_ = std::max<std::int64_t>(0, mpp::snap_span(start, t->length, points, tolerance));
+        drag_length_ = t->length;
+      } else if (drag_ == Drag::TransitionHead) {
+        const std::int64_t start = std::min(mpp::snap(boundary, points, tolerance), t->end() - 1);
+        drag_start_ = start;
+        drag_length_ = t->end() - start;
+      } else {
+        const std::int64_t end = std::max(mpp::snap(boundary, points, tolerance), t->start + 1);
+        drag_start_ = t->start;
+        drag_length_ = end - t->start;
+      }
+      break;
+    }
     case Drag::TrimHead: {
       const Clip* clip = project_->clip(drag_clip_);
       if (!clip) break;
@@ -420,9 +501,10 @@ bool ConstructionView::mouse_motion_event(const Vector2i& p, const Vector2i&, in
   // A trim cursor over clip edges, a hand over clip bodies.
   const Vector2i local = p - m_pos;
   const Hit h = hit(local);
+  const bool over = h.clip || h.transition;
   if (tool_ == TimelineTool::Razor && h.clip) set_cursor(nanogui::Cursor::Crosshair);
-  else if (h.clip && (h.head || h.tail)) set_cursor(nanogui::Cursor::HResize);
-  else if (h.clip) set_cursor(nanogui::Cursor::Hand);
+  else if (over && (h.head || h.tail)) set_cursor(nanogui::Cursor::HResize);
+  else if (over) set_cursor(nanogui::Cursor::Hand);
   else set_cursor(nanogui::Cursor::Arrow);
   return true;
 }
@@ -561,10 +643,33 @@ void ConstructionView::draw_tracks(NVGcontext* ctx) {
 
   nvgSave(ctx);
   nvgIntersectScissor(ctx, kHeaderWidth, 0, w - kHeaderWidth, m_size.y());
+  const bool dragging_transition = drag_ == Drag::TransitionMove ||
+                                   drag_ == Drag::TransitionHead || drag_ == Drag::TransitionTail;
+  for (const mpp::Transition& t : project_->transitions) {
+    const bool ghosted = dragging_transition && moved_ && t.id == drag_clip_;
+    draw_transition(ctx, t, t.start, t.length, ghosted ? 0.35f : 1.0f, is_selected(t.id));
+  }
+  if (dragging_transition && moved_) {
+    if (const mpp::Transition* t = project_->transition(drag_clip_)) {
+      draw_transition(ctx, *t, drag_start_, drag_length_, 0.85f, true);
+    }
+  }
+  if (transition_drop_length_ > 0) {
+    const float x0 = local_x_of(static_cast<double>(transition_drop_start_));
+    const float x1 = local_x_of(static_cast<double>(transition_drop_start_ + transition_drop_length_));
+    nvgBeginPath(ctx);
+    nvgRect(ctx, x0, row_top(Row::Transition) + 2, std::max(2.0f, x1 - x0),
+            row_height(Row::Transition) - 4);
+    nvgFillColor(ctx, nvgRGBA(255, 255, 255, 60));
+    nvgFill(ctx);
+    nvgStrokeColor(ctx, nvgRGB(255, 255, 255));
+    nvgStrokeWidth(ctx, 1.5f);
+    nvgStroke(ctx);
+  }
   const bool dragging_clip =
       drag_ == Drag::Move || drag_ == Drag::TrimHead || drag_ == Drag::TrimTail;
   for (const Clip& c : project_->clips) {
-    const bool selected = std::find(selected_.begin(), selected_.end(), c.id) != selected_.end();
+    const bool selected = is_selected(c.id);
     const bool ghosted = dragging_clip && moved_ && c.id == drag_clip_;
     draw_clip(ctx, c, c.start, c.track, ghosted ? 0.35f : 1.0f, selected);
   }
@@ -647,6 +752,50 @@ void ConstructionView::draw_clip(NVGcontext* ctx, const Clip& clip, std::int64_t
     nvgTextAlign(ctx, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
     nvgFillColor(ctx, nvgRGBAf(1, 1, 1, alpha));
     nvgText(ctx, text_x, y + 3, item->name.c_str(), nullptr);
+  }
+  nvgRestore(ctx);
+}
+
+void ConstructionView::draw_transition(NVGcontext* ctx, const mpp::Transition& t,
+                                       std::int64_t start, std::int64_t length, float alpha,
+                                       bool selected) {
+  const float x0 = local_x_of(static_cast<double>(start));
+  const float x1 = local_x_of(static_cast<double>(start + length));
+  if (x1 < kHeaderWidth || x0 > m_size.x()) return;
+  const float y = row_top(Row::Transition) + 2.0f, h = row_height(Row::Transition) - 4.0f;
+  const float w = std::max(2.0f, x1 - x0);
+  NVGcolor color = nvgRGB(190, 150, 50);
+  if (selected) color = nvgLerpRGBA(color, nvgRGB(255, 255, 255), 0.3f);
+  color.a = alpha;
+  nvgBeginPath(ctx);
+  nvgRoundedRect(ctx, x0, y, w, h, 2);
+  nvgFillColor(ctx, color);
+  nvgFill(ctx);
+  nvgStrokeColor(ctx, selected ? nvgRGBAf(1, 1, 1, alpha) : nvgRGBAf(0, 0, 0, alpha * 0.6f));
+  nvgStrokeWidth(ctx, selected ? 1.5f : 1.0f);
+  nvgStroke(ctx);
+  nvgSave(ctx);
+  nvgIntersectScissor(ctx, x0, y, w, h);
+  // The track arrow: down for A to B, up for B to A.
+  const float ax = x0 + 9, ay = y + h / 2;
+  nvgBeginPath(ctx);
+  if (t.settings.b_to_a) {
+    nvgMoveTo(ctx, ax - 5, ay + 4);
+    nvgLineTo(ctx, ax + 5, ay + 4);
+    nvgLineTo(ctx, ax, ay - 5);
+  } else {
+    nvgMoveTo(ctx, ax - 5, ay - 4);
+    nvgLineTo(ctx, ax + 5, ay - 4);
+    nvgLineTo(ctx, ax, ay + 5);
+  }
+  nvgFillColor(ctx, nvgRGBAf(0.1f, 0.1f, 0.1f, alpha));
+  nvgFill(ctx);
+  if (const mpp::TransitionDef* def = mpp::find_transition(t.kind)) {
+    nvgFontFace(ctx, "sans");
+    nvgFontSize(ctx, 12);
+    nvgTextAlign(ctx, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    nvgFillColor(ctx, nvgRGBAf(0.08f, 0.08f, 0.08f, alpha));
+    nvgText(ctx, x0 + 18, ay, def->name.c_str(), nullptr);
   }
   nvgRestore(ctx);
 }

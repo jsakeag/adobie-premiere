@@ -36,6 +36,11 @@ std::vector<std::int64_t> snap_points(const Project& project, std::int64_t edit_
     points.push_back(c.start);
     points.push_back(c.end());
   }
+  for (const Transition& t : project.transitions) {
+    if (std::find(ignore.begin(), ignore.end(), t.id) != ignore.end()) continue;
+    points.push_back(t.start);
+    points.push_back(t.end());
+  }
   return points;
 }
 

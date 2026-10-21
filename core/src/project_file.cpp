@@ -97,6 +97,23 @@ std::string encode_project(const Project& p, const std::string& project_dir) {
                      {"link", c.link}});
   }
   j["clips"] = clips;
+  json transitions = json::array();
+  for (const Transition& t : p.transitions) {
+    const TransitionSettings& s = t.settings;
+    transitions.push_back({{"id", t.id},
+                           {"kind", t.kind},
+                           {"start", t.start},
+                           {"length", t.length},
+                           {"from", s.start},
+                           {"to", s.end},
+                           {"b_to_a", s.b_to_a},
+                           {"reverse", s.reverse},
+                           {"border", s.border},
+                           {"border_color", json::array({s.border_color.r, s.border_color.g,
+                                                         s.border_color.b})},
+                           {"direction", s.direction}});
+  }
+  j["transitions"] = transitions;
   return j.dump(2);
 }
 
@@ -156,6 +173,24 @@ Project decode_project(const std::string& text, const std::string& project_dir) 
       clip.out = c.at("out").get<std::int64_t>();
       clip.link = c.at("link").get<int>();
       p.clips.push_back(clip);
+    }
+    for (const json& t : j.value("transitions", json::array())) {
+      Transition tr;
+      tr.id = t.at("id").get<int>();
+      tr.kind = t.at("kind").get<std::string>();
+      tr.start = t.at("start").get<std::int64_t>();
+      tr.length = t.at("length").get<std::int64_t>();
+      TransitionSettings& s = tr.settings;
+      s.start = t.at("from").get<double>();
+      s.end = t.at("to").get<double>();
+      s.b_to_a = t.at("b_to_a").get<bool>();
+      s.reverse = t.at("reverse").get<bool>();
+      s.border = t.at("border").get<int>();
+      const json& c = t.at("border_color");
+      s.border_color = {c.at(0).get<std::uint8_t>(), c.at(1).get<std::uint8_t>(),
+                        c.at(2).get<std::uint8_t>(), 255};
+      s.direction = t.at("direction").get<int>();
+      p.transitions.push_back(tr);
     }
     return p;
   } catch (const json::exception& e) {

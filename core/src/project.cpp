@@ -65,9 +65,31 @@ std::vector<const Clip*> Project::clips_on(Track track) const {
   return out;
 }
 
+const Transition* Project::transition(int id) const {
+  for (const Transition& t : transitions) {
+    if (t.id == id) return &t;
+  }
+  return nullptr;
+}
+
+Transition* Project::transition(int id) {
+  for (Transition& t : transitions) {
+    if (t.id == id) return &t;
+  }
+  return nullptr;
+}
+
+const Transition* Project::transition_at(std::int64_t frame) const {
+  for (const Transition& t : transitions) {
+    if (t.covers(frame)) return &t;
+  }
+  return nullptr;
+}
+
 std::int64_t Project::duration() const {
   std::int64_t end = 0;
   for (const Clip& c : clips) end = std::max(end, c.end());
+  for (const Transition& t : transitions) end = std::max(end, t.end());
   return end;
 }
 

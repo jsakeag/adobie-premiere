@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -24,6 +25,9 @@ class SettingsWindow : public nanogui::Window {
   // Chooses entries as the user would (self-test); -1 leaves one alone.
   void choose(int size, int rate, int audio);
   void ok();
+  void cancel();
+  // Called once the window has closed, either way.
+  void set_closed_callback(std::function<void()> closed) { closed_ = std::move(closed); }
 
   static const std::vector<std::string>& size_names();
   static const std::vector<std::string>& rate_names();
@@ -32,6 +36,7 @@ class SettingsWindow : public nanogui::Window {
  private:
   mpp::ProjectSettings settings() const;
 
+  std::function<void()> closed_;
   mpp::ProjectSettings current_;
   std::function<void(const mpp::ProjectSettings&)> apply_;
   nanogui::ComboBox* size_ = nullptr;

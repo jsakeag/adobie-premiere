@@ -17,9 +17,13 @@ double clip_source_position(const Clip& clip, std::int64_t frame);
 Image clip_picture(const Project& project, MediaCache& cache, const Clip& clip,
                    std::int64_t frame);
 
+// What Video A or Video B shows at a frame: its clip's picture over black,
+// or black. Media that can't be read shows as black.
+Image track_picture(const Project& project, MediaCache& cache, Track track, std::int64_t frame);
+
 // The program at a timeline frame: an opaque picture at the project's frame
-// size. Video A shows where it has a clip, Video B elsewhere, black where
-// neither does. Media that can't be read shows as black.
+// size. Under a transition, the transition from one of Video A and B to the
+// other; elsewhere Video A where it has a clip, Video B where it doesn't.
 Image render_frame(const Project& project, MediaCache& cache, std::int64_t frame);
 
 }  // namespace mpp

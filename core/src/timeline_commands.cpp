@@ -137,19 +137,82 @@ void RazorCommand::apply(Project& p) {
   }
 }
 
-void DeleteClipsCommand::apply(Project& p) {
+void ClearCommand::apply(Project& p) {
   std::vector<int> doomed;
-  for (int id : clips) {
-    const Clip& c = find_clip(p, id);
-    doomed.push_back(id);
-    if (c.link) doomed.push_back(c.link);
+  for (int id : ids) {
+    if (const Clip* c = p.clip(id)) {
+      doomed.push_back(id);
+      if (c->link) doomed.push_back(c->link);
+    } else if (p.transition(id)) {
+      doomed.push_back(id);
+    } else {
+      refuse("Nothing to clear with that id");
+    }
   }
+  const auto gone = [&](int id) { return std::find(doomed.begin(), doomed.end(), id) != doomed.end(); };
   p.clips.erase(std::remove_if(p.clips.begin(), p.clips.end(),
-                               [&](const Clip& c) {
-                                 return std::find(doomed.begin(), doomed.end(), c.id) !=
-                                        doomed.end();
-                               }),
+                               [&](const Clip& c) { return gone(c.id); }),
                 p.clips.end());
+  p.transitions.erase(std::remove_if(p.transitions.begin(), p.transitions.end(),
+                                     [&](const Transition& t) { return gone(t.id); }),
+                      p.transitions.end());
+}
+
+void check_transition(const Project& p, const Transition& t) {
+  if (!find_transition(t.kind)) refuse("Unknown transition '" + t.kind + "'");
+  if (t.length < 1) refuse("A transition must be at least one frame long");
+  if (t.start < 0) refuse("A transition can't start before the beginning of the program");
+  if (t.settings.start < 0 || t.settings.start > 1 || t.settings.end < 0 || t.settings.end > 1) {
+    refuse("Start and end must be between 0 and 100%");
+  }
+  if (t.settings.border < 0 || t.settings.border > 100) refuse("Border must be 0 to 100 pixels");
+  for (const Transition& other : p.transitions) {
+    if (other.id != t.id && other.start < t.end() && t.start < other.end()) {
+      refuse("That space on the transition track is taken");
+    }
+  }
+}
+
+TransitionSpan suggest_transition_span(const Project& p, std::int64_t frame,
+                                       std::int64_t default_length) {
+  TransitionSpan span;
+  span.start = std::max<std::int64_t>(0, frame);
+  span.length = std::max<std::int64_t>(1, default_length);
+  const Clip* a = p.clip_at(Track::VideoA, frame);
+  const Clip* b = p.clip_at(Track::VideoB, frame);
+  if (a && b) {
+    span.start = std::max(a->start, b->start);
+    span.length = std::min(a->end(), b->end()) - span.start;
+    // The clip that ends first is the one going out.
+    span.b_to_a = b->end() < a->end() || (b->end() == a->end() && b->start < a->start);
+  }
+  return span;
+}
+
+void AddTransitionCommand::apply(Project& p) {
+  Transition t;
+  t.id = p.next_id++;
+  t.kind = kind;
+  t.start = start;
+  t.length = length;
+  t.settings = settings;
+  check_transition(p, t);
+  p.transitions.push_back(t);
+}
+
+void SetTransitionSpanCommand::apply(Project& p) {
+  Transition* t = p.transition(transition);
+  if (!t) refuse("No such transition");
+  t->start = start;
+  t->length = length;
+  check_transition(p, *t);
+}
+
+void SetTransitionSettingsCommand::apply(Project& p) {
+  Transition* t = p.transition(transition);
+  if (!t) refuse("No such transition");
+  t->settings = settings;
+  check_transition(p, *t);
 }
 
 void SetWorkAreaCommand::apply(Project& p) {

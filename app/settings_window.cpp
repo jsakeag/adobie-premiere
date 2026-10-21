@@ -125,7 +125,7 @@ SettingsWindow::SettingsWindow(nanogui::Widget* parent, const mpp::ProjectSettin
   buttons->set_layout(new nanogui::BoxLayout(nanogui::Orientation::Horizontal,
                                              nanogui::Alignment::Middle, 0, 8));
   nanogui::Button* cancel = new nanogui::Button(buttons, "Cancel");
-  cancel->set_callback([this] { dispose(); });
+  cancel->set_callback([this] { this->cancel(); });
   nanogui::Button* ok = new nanogui::Button(buttons, "OK");
   ok->set_callback([this] { this->ok(); });
 }
@@ -165,6 +165,12 @@ void SettingsWindow::choose(int size, int rate, int audio) {
 void SettingsWindow::ok() {
   const mpp::ProjectSettings s = settings();
   std::function<void(const mpp::ProjectSettings&)> apply = apply_;
-  dispose();
+  cancel();
   if (apply) apply(s);
+}
+
+void SettingsWindow::cancel() {
+  std::function<void()> closed = std::move(closed_);
+  dispose();
+  if (closed) closed();
 }

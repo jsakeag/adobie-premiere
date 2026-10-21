@@ -81,12 +81,55 @@ class RazorCommand : public Command {
   void apply(Project& p) override;
 };
 
-// Removes clips and their linked clips.
-class DeleteClipsCommand : public Command {
+// Removes clips (with their linked clips) and transitions, by id.
+class ClearCommand : public Command {
  public:
-  explicit DeleteClipsCommand(std::vector<int> clips) : clips(std::move(clips)) {}
+  explicit ClearCommand(std::vector<int> ids) : ids(std::move(ids)) {}
   std::string name() const override { return "Clear"; }
-  const std::vector<int> clips;
+  const std::vector<int> ids;
+
+ protected:
+  void apply(Project& p) override;
+};
+
+// Puts a transition on the T track. Transitions don't overlap each other.
+class AddTransitionCommand : public Command {
+ public:
+  AddTransitionCommand(std::string kind, std::int64_t start, std::int64_t length,
+                       TransitionSettings settings = {})
+      : kind(std::move(kind)), start(start), length(length), settings(settings) {}
+  std::string name() const override { return "Add Transition"; }
+  const std::string kind;
+  const std::int64_t start;
+  const std::int64_t length;
+  const TransitionSettings settings;
+
+ protected:
+  void apply(Project& p) override;
+};
+
+// Moves and resizes a transition: dragging its body or its ends.
+class SetTransitionSpanCommand : public Command {
+ public:
+  SetTransitionSpanCommand(int transition, std::int64_t start, std::int64_t length)
+      : transition(transition), start(start), length(length) {}
+  std::string name() const override { return "Move Transition"; }
+  const int transition;
+  const std::int64_t start;
+  const std::int64_t length;
+
+ protected:
+  void apply(Project& p) override;
+};
+
+// The settings dialog's OK, and the track arrow.
+class SetTransitionSettingsCommand : public Command {
+ public:
+  SetTransitionSettingsCommand(int transition, TransitionSettings settings)
+      : transition(transition), settings(settings) {}
+  std::string name() const override { return "Transition Settings"; }
+  const int transition;
+  const TransitionSettings settings;
 
  protected:
   void apply(Project& p) override;
@@ -103,6 +146,22 @@ class SetWorkAreaCommand : public Command {
  protected:
   void apply(Project& p) override;
 };
+
+// Where a transition dropped at `frame` should go: over the overlap of the
+// Video A and Video B clips there if both have one (pointing from the one
+// that ends first to the other), otherwise `default_length` frames from
+// `frame`, A to B.
+struct TransitionSpan {
+  std::int64_t start = 0;
+  std::int64_t length = 1;
+  bool b_to_a = false;
+};
+TransitionSpan suggest_transition_span(const Project& p, std::int64_t frame,
+                                       std::int64_t default_length);
+
+// Throws std::invalid_argument for an unknown kind, an empty span, or an
+// overlap with another transition.
+void check_transition(const Project& p, const Transition& t);
 
 // Throws std::invalid_argument if a clip's item is missing, its track
 // doesn't suit the item, its range runs outside the source, or it overlaps

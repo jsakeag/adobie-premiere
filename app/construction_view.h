@@ -24,6 +24,8 @@ struct ConstructionActions {
   std::function<void(int clip, std::int64_t start, std::int64_t in, std::int64_t out)> trim;
   std::function<void(int clip, std::int64_t frame)> razor;
   std::function<void(std::int64_t in, std::int64_t out)> set_work_area;
+  std::function<void(int transition, std::int64_t start, std::int64_t length)> set_transition_span;
+  std::function<void(int transition)> edit_transition;  // double-click
   std::function<void()> focus;  // the view was clicked
   // A small picture of an item at a source position (project frames), for
   // the head of each video clip.
@@ -63,10 +65,16 @@ class ConstructionView : public nanogui::Widget {
   std::optional<DropTarget> drop_target(const nanogui::Vector2i& screen, std::int64_t length,
                                         bool has_video, bool has_audio) const;
   void show_drop(std::optional<DropTarget> target, std::int64_t length);
+  // The same for a transition dragged from the Transitions window: the
+  // frame under the pointer if it is over the T track, and the span to
+  // outline (length 0 hides it).
+  std::optional<std::int64_t> transition_drop_frame(const nanogui::Vector2i& screen) const;
+  void show_transition_drop(std::int64_t start, std::int64_t length);
 
   // Screen position just inside a frame on a track, and on the ruler and
-  // the work area bar (self-test).
+  // the work area bar (self-test; exact at 4 or more pixels a frame).
   nanogui::Vector2i point_at(mpp::Track track, std::int64_t frame) const;
+  nanogui::Vector2i transition_point(std::int64_t frame) const;
   nanogui::Vector2i ruler_point(std::int64_t frame) const;
   nanogui::Vector2i work_area_point(std::int64_t frame) const;
 
@@ -82,10 +90,12 @@ class ConstructionView : public nanogui::Widget {
  private:
   enum class Row { VideoA, Transition, VideoB, Super, AudioA, AudioB, AudioC };
   enum class Drag {
-    None, EditLine, WorkIn, WorkOut, WorkMove, Move, TrimHead, TrimTail, ScrollBar
+    None, EditLine, WorkIn, WorkOut, WorkMove, Move, TrimHead, TrimTail, ScrollBar,
+    TransitionMove, TransitionHead, TransitionTail
   };
   struct Hit {
     const mpp::Clip* clip = nullptr;
+    const mpp::Transition* transition = nullptr;
     bool head = false;  // within the trim zone at the start
     bool tail = false;  // within the trim zone at the end
   };
@@ -108,6 +118,9 @@ class ConstructionView : public nanogui::Widget {
   void draw_tracks(NVGcontext* ctx);
   void draw_clip(NVGcontext* ctx, const mpp::Clip& clip, std::int64_t start, mpp::Track track,
                  float alpha, bool selected);
+  void draw_transition(NVGcontext* ctx, const mpp::Transition& t, std::int64_t start,
+                       std::int64_t length, float alpha, bool selected);
+  bool is_selected(int id) const;
   void draw_scroll_bar(NVGcontext* ctx);
 
   ConstructionActions actions_;
@@ -125,11 +138,13 @@ class ConstructionView : public nanogui::Widget {
   int drag_clip_ = 0;
   mpp::Track drag_track_ = mpp::Track::VideoA;
   std::int64_t drag_start_ = 0, drag_in_ = 0, drag_out_ = 0;  // ghost values
+  std::int64_t drag_length_ = 0;                               // a transition's
   std::int64_t work_in_ = 0, work_out_ = 0;                    // ghost work area
   double grab_offset_ = 0;  // frames between the clip start and the press
 
   std::optional<DropTarget> drop_;
   std::int64_t drop_length_ = 0;
+  std::int64_t transition_drop_start_ = 0, transition_drop_length_ = 0;
 
   std::map<std::pair<int, std::int64_t>, NvgImage> thumbs_;  // by item and in point
 };

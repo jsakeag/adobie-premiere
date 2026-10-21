@@ -24,6 +24,7 @@ add_executable(mock_premiere
   selftest.cpp
   settings_window.cpp
   timeline_windows.cpp
+  transition_windows.cpp
 )
 target_link_libraries(mock_premiere PRIVATE mpp_core nanogui)
 # Apple deprecates OpenGL; NanoGUI's backend and our screenshot code use it.

@@ -19,6 +19,7 @@ add_executable(mpp_tests
   test_resample.cpp
   test_time_scale.cpp
   test_timeline_commands.cpp
+  test_transitions.cpp
 )
 target_link_libraries(mpp_tests PRIVATE mpp_core Catch2::Catch2WithMain)
 target_compile_definitions(mpp_tests PRIVATE

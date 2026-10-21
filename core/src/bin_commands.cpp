@@ -59,6 +59,11 @@ void SetSettingsCommand::apply(Project& p) {
         clip.in = std::min(clip.in, clip.out - 1);
       }
     }
+    for (Transition& t : p.transitions) {
+      const std::int64_t start = at(t.start);
+      t.length = std::max<std::int64_t>(1, at(t.end()) - start);
+      t.start = start;
+    }
     p.work_in = at(p.work_in);
     p.work_out = std::max(p.work_in + 1, at(p.work_out));
   }

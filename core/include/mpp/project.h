@@ -7,6 +7,7 @@
 
 #include "mpp/media.h"
 #include "mpp/rate.h"
+#include "mpp/transitions.h"
 
 namespace mpp {
 
@@ -70,12 +71,27 @@ struct Clip {
   bool covers(std::int64_t frame) const { return frame >= start && frame < end(); }
 };
 
+// A transition on the T track, covering timeline frames [start, end()).
+// It plays from the Video A picture to Video B (or B to A, per its
+// settings) wherever it lies; where a track has no clip it reads as black.
+struct Transition {
+  int id = 0;
+  std::string kind;  // a TransitionDef id
+  std::int64_t start = 0;
+  std::int64_t length = 1;
+  TransitionSettings settings;
+
+  std::int64_t end() const { return start + length; }
+  bool covers(std::int64_t frame) const { return frame >= start && frame < end(); }
+};
+
 // Everything a project file holds. A plain value: Editor keeps a copy for
 // undo, and the UI reads it but changes it only through commands.
 struct Project {
   ProjectSettings settings;
   std::vector<MediaItem> bin;
   std::vector<Clip> clips;  // in no particular order
+  std::vector<Transition> transitions;
   // The yellow bar over the ruler: what Preview renders and Export writes.
   std::int64_t work_in = 0;
   std::int64_t work_out = 0;
@@ -92,7 +108,11 @@ struct Project {
   const Clip* clip_at(Track track, std::int64_t frame) const;
   // Clips on a track, sorted by start.
   std::vector<const Clip*> clips_on(Track track) const;
-  // One past the last frame any clip covers; 0 when empty.
+  const Transition* transition(int id) const;
+  Transition* transition(int id);
+  const Transition* transition_at(std::int64_t frame) const;
+
+  // One past the last frame any clip or transition covers; 0 when empty.
   std::int64_t duration() const;
 };
 

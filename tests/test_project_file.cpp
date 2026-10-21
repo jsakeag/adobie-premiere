@@ -24,6 +24,15 @@ mpp::Project sample() {
   e.execute(std::make_unique<mpp::PlaceClipCommand>(2, Track::VideoB, 0, 0, 90));
   e.execute(std::make_unique<mpp::PlaceClipCommand>(3, Track::AudioC, 7, 0, 20));
   e.execute(std::make_unique<mpp::SetWorkAreaCommand>(1, 77));
+  mpp::TransitionSettings t;
+  t.start = 0.25;
+  t.end = 0.75;
+  t.b_to_a = true;
+  t.reverse = true;
+  t.border = 3;
+  t.border_color = {10, 20, 30, 255};
+  t.direction = 2;
+  e.execute(std::make_unique<mpp::AddTransitionCommand>("wipe", 20, 12, t));
   return e.project();
 }
 
@@ -52,6 +61,14 @@ void check_same(const mpp::Project& a, const mpp::Project& b) {
     CHECK(a.clips[i].in == b.clips[i].in);
     CHECK(a.clips[i].out == b.clips[i].out);
     CHECK(a.clips[i].link == b.clips[i].link);
+  }
+  REQUIRE(a.transitions.size() == b.transitions.size());
+  for (std::size_t i = 0; i < a.transitions.size(); ++i) {
+    CHECK(a.transitions[i].id == b.transitions[i].id);
+    CHECK(a.transitions[i].kind == b.transitions[i].kind);
+    CHECK(a.transitions[i].start == b.transitions[i].start);
+    CHECK(a.transitions[i].length == b.transitions[i].length);
+    CHECK(a.transitions[i].settings == b.transitions[i].settings);
   }
 }
 

@@ -126,7 +126,7 @@ TEST_CASE("the razor splits a clip and its sound", "[timeline]") {
   CHECK(sounds[1]->link == pictures[1]->id);
 
   // Deleting the right-hand picture takes its sound only.
-  run<mpp::DeleteClipsCommand>(e, std::vector<int>{pictures[1]->id});
+  run<mpp::ClearCommand>(e, std::vector<int>{pictures[1]->id});
   CHECK(e.project().clips.size() == 2);
   e.undo();
   CHECK(e.project().clips.size() == 4);
@@ -163,4 +163,48 @@ TEST_CASE("the work area needs a frame", "[timeline]") {
   run<mpp::SetWorkAreaCommand>(e, 5, 50);
   CHECK(e.project().work_in == 5);
   CHECK_THROWS(run<mpp::SetWorkAreaCommand>(e, 5, 5));
+}
+
+TEST_CASE("transitions sit on the T track without overlapping", "[timeline][transitions]") {
+  Editor e = editor_with_media();
+  run<mpp::AddTransitionCommand>(e, "cross_dissolve", 10, 20);
+  REQUIRE(e.project().transitions.size() == 1);
+  const int id = e.project().transitions[0].id;
+  CHECK(e.project().transition_at(29)->id == id);
+  CHECK(e.project().transition_at(30) == nullptr);
+  CHECK(e.project().duration() == 30);
+  CHECK_THROWS(run<mpp::AddTransitionCommand>(e, "cross_dissolve", 25, 10));
+  CHECK_THROWS(run<mpp::AddTransitionCommand>(e, "page_curl", 40, 10));
+  CHECK_THROWS(run<mpp::AddTransitionCommand>(e, "wipe", 40, 0));
+
+  run<mpp::SetTransitionSpanCommand>(e, id, 50, 5);
+  CHECK(e.project().transition(id)->start == 50);
+  mpp::TransitionSettings s;
+  s.b_to_a = true;
+  s.border = 2;
+  run<mpp::SetTransitionSettingsCommand>(e, id, s);
+  CHECK(e.project().transition(id)->settings.b_to_a);
+  s.end = 1.5;
+  CHECK_THROWS(run<mpp::SetTransitionSettingsCommand>(e, id, s));
+
+  run<mpp::ClearCommand>(e, std::vector<int>{id});
+  CHECK(e.project().transitions.empty());
+  e.undo();
+  CHECK(e.project().transitions.size() == 1);
+}
+
+TEST_CASE("a dropped transition fits the A/B overlap", "[timeline][transitions]") {
+  Editor e = editor_with_media();
+  run<mpp::PlaceClipCommand>(e, 4, Track::VideoA, 0, 0, 60);
+  run<mpp::PlaceClipCommand>(e, 2, Track::VideoB, 45, 0, 100);
+  const auto span = mpp::suggest_transition_span(e.project(), 50, 30);
+  CHECK(span.start == 45);
+  CHECK(span.length == 15);
+  CHECK_FALSE(span.b_to_a);  // A ends first, so it goes out
+  const auto alone = mpp::suggest_transition_span(e.project(), 120, 30);
+  CHECK(alone.start == 120);
+  CHECK(alone.length == 30);
+  // B going out to A.
+  run<mpp::MoveClipCommand>(e, e.project().clips_on(Track::VideoA)[0]->id, Track::VideoA, 130);
+  CHECK(mpp::suggest_transition_span(e.project(), 132, 30).b_to_a);
 }

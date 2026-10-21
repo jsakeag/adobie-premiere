@@ -29,8 +29,8 @@ inline constexpr int kZoomLevelCount = sizeof(kZoomLevels) / sizeof(kZoomLevels[
 // between labels.
 std::int64_t tick_step(Rate rate, double px_per_frame, double min_px);
 
-// Where edits snap: the program start, the edit line, and every clip's
-// start and end except the clips in `ignore`.
+// Where edits snap: the program start, the edit line, and the start and
+// end of every clip and transition except those whose ids are in `ignore`.
 std::vector<std::int64_t> snap_points(const Project& project, std::int64_t edit_line,
                                       const std::vector<int>& ignore);
 

@@ -1,3 +1,4 @@
+#include <cmath>
 #include <memory>
 
 #include <catch2/catch_test_macros.hpp>
@@ -71,4 +72,33 @@ TEST_CASE("a clip with alpha shows black through on Video A", "[render]") {
   const mpp::Image frame = mpp::render_frame(e.project(), cache, 3);
   CHECK(frame.pixel(10, 60) == Color{255, 0, 0, 255});
   CHECK(frame.pixel(150, 60) == mpp::kBlack);
+}
+
+TEST_CASE("a transition mixes Video A into Video B", "[render][transitions]") {
+  mpp::ProjectSettings settings;
+  settings.width = 160;
+  settings.height = 120;
+  settings.rate = {15, 1, false};
+  mpp::Editor e(project_with({"counter.mov", "still.png"}, settings));
+  e.execute(std::make_unique<mpp::PlaceClipCommand>(1, Track::VideoA, 0, 0, 20));
+  e.execute(std::make_unique<mpp::PlaceClipCommand>(2, Track::VideoB, 10, 0, 30));
+  e.execute(std::make_unique<mpp::AddTransitionCommand>("cross_dissolve", 10, 10));
+  mpp::MediaCache cache;
+  const mpp::Project& p = e.project();
+  // Frame 14 is the fifth of ten: 45% of the way to B. B's still is blue
+  // on the left, so (0, 0, 255) mixes with counter frame 14.
+  const mpp::Color a = counter(14);
+  const mpp::Color mixed = mpp::render_frame(p, cache, 14).pixel(20, 60);
+  CHECK(mixed.r == std::lround(a.r * 0.55));
+  CHECK(mixed.b == std::lround(a.b * 0.55 + 255 * 0.45));
+  // Outside the transition A wins again, even though B has a clip.
+  CHECK(mpp::render_frame(p, cache, 9).pixel(20, 60) == counter(9));
+  CHECK(mpp::render_frame(p, cache, 25).pixel(20, 60) == Color{0, 0, 255, 255});
+
+  // Pointing the other way, it goes from B to A.
+  mpp::TransitionSettings back;
+  back.b_to_a = true;
+  e.execute(std::make_unique<mpp::SetTransitionSettingsCommand>(p.transitions[0].id, back));
+  const mpp::Color reversed = mpp::render_frame(p, cache, 14).pixel(20, 60);
+  CHECK(reversed.r == std::lround(a.r * 0.45));
 }

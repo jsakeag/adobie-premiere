@@ -1,6 +1,7 @@
 #include "selftest.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <string>
 
@@ -15,6 +16,7 @@
 #include "mpp/project_file.h"
 #include "settings_window.h"
 #include "timeline_windows.h"
+#include "transition_windows.h"
 
 namespace {
 
@@ -194,7 +196,7 @@ int run_selftest(const std::string& out_dir, const std::string& fixtures) {
     // Select the right-hand piece and clear it.
     const mpp::Clip* piece = project().clip_at(mpp::Track::VideoA, 30);
     app->simulate_click(view->point_at(mpp::Track::VideoA, 30));
-    check(piece && app->selected_clips() == std::vector<int>{piece->id}, "clicking a clip selects it");
+    check(piece && app->selection() == std::vector<int>{piece->id}, "clicking a clip selects it");
     app->clear_selected();
     check(!project().clip_at(mpp::Track::VideoA, 30) && !project().clip_at(mpp::Track::AudioA, 30),
           "Clear removes the clip and its sound");
@@ -231,6 +233,68 @@ int run_selftest(const std::string& out_dir, const std::string& fixtures) {
     shot("16_prompt");
     app->answer_discard_prompt(false);
     check(project().clips.size() == clip_count + 1, "Cancel keeps the project");
+
+    // Milestone 3: transitions. Back to 4 pixels a frame, which the
+    // position helpers below assume.
+    app->zoom(1);
+    app->new_project();
+    app->import(media("counter.mov"));
+    app->import(media("still.png"));
+    app->place(project().bin[0].id, mpp::Track::VideoA, 0);
+    app->place(project().bin[1].id, mpp::Track::VideoB, 40);
+    app->draw_all();
+    app->simulate_drag(app->transitions_window()->row_center("cross_dissolve"),
+                       view->transition_point(45));
+    check(project().transitions.size() == 1, "dragging Cross Dissolve onto the T track adds it");
+    const mpp::Transition* dissolve = project().transitions.empty() ? nullptr : &project().transitions[0];
+    check(dissolve && dissolve->start == 40 && dissolve->length == 20 && !dissolve->settings.b_to_a,
+          "it fits the A/B overlap, A to B");
+    app->set_edit_line(50);
+    app->draw_all();
+    const mpp::Color mid = app->preview_window()->view()->frame().pixel(20, 120);
+    // Frame 50 is 52.5% through: counter frame 25 (200, 55, 64) towards the
+    // still's blue.
+    check(std::abs(mid.r - 95) <= 2 && std::abs(mid.b - 164) <= 2, "Preview shows A and B mixed");
+    shot("17_transition");
+
+    // Double-click opens its settings.
+    app->simulate_click(view->transition_point(50));
+    app->simulate_click(view->transition_point(50), nanogui::MOD_DOUBLE_CLICK);
+    check(app->transition_settings() != nullptr, "double-clicking a transition opens its settings");
+    if (app->transition_settings()) {
+      mpp::TransitionSettings s = app->transition_settings()->settings();
+      s.start = 0.25;
+      s.b_to_a = true;
+      app->transition_settings()->set_settings(s);
+      shot("18_transition_settings");
+      app->transition_settings()->ok();
+    }
+    check(app->transition_settings() == nullptr, "OK closes the settings");
+    check(project().transitions[0].settings.start == 0.25 && project().transitions[0].settings.b_to_a,
+          "the settings are applied");
+    app->toggle_undo();
+    check(project().transitions[0].settings.start == 0.0, "and can be undone");
+    app->edit_transition(project().transitions[0].id);
+    if (app->transition_settings()) app->transition_settings()->cancel();
+    check(app->transition_settings() == nullptr && project().transitions[0].settings.start == 0.0,
+          "Cancel closes without changing anything");
+
+    // Drag its end to shorten it, then its body to move it.
+    app->simulate_drag(view->transition_point(59), view->transition_point(55));
+    check(project().transitions[0].length == 15, "dragging a transition's end trims it");
+    app->simulate_drag(view->transition_point(47), view->transition_point(57));
+    check(project().transitions[0].start == 50, "dragging its body moves it");
+
+    // Another one where there's no overlap lasts a second; Delete clears it.
+    check(app->add_transition("iris_round", 150), "add Iris Round away from the overlap");
+    check(project().transitions.size() == 2 && project().transition_at(150)->length == 30,
+          "a lone transition lasts a second");
+    app->clear_selected();
+    check(project().transitions.size() == 1, "Clear removes the selected transition");
+    app->open_settings();
+    app->settings_window()->cancel();
+    check(app->settings_window() == nullptr, "Cancel closes Project Settings");
+    shot("19_transitions_window");
   }
   nanogui::shutdown();
   std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "PASSED", failures);
