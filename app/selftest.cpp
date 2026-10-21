@@ -12,7 +12,9 @@
 #include "frame_view.h"
 #include "menu_bar.h"
 #include "project_window.h"
+#include "mpp/project_file.h"
 #include "settings_window.h"
+#include "timeline_windows.h"
 
 namespace {
 
@@ -118,6 +120,117 @@ int run_selftest(const std::string& out_dir, const std::string& fixtures) {
     app->toggle_undo();
     check(project().bin.size() == 4, "and undo brings it back");
     shot("10_final");
+
+    // Milestone 2: the Construction and Preview windows.
+    app->new_project();
+    check(project().bin.empty() && project().settings.width == 320, "new project");
+    app->import(media("counter.mov"));
+    app->import(media("still.png"));
+    app->import(media("h264.mp4"));
+    app->import(media("tone.wav"));
+    const int movie = project().bin[0].id;
+    const int picture = project().bin[1].id;
+    const int grey = project().bin[2].id;
+    ConstructionView* view = app->construction_window()->view();
+    app->perform_layout();
+    app->draw_all();  // lay out before reading positions
+
+    // Drag the movie from the Project window to Video A at 0.
+    app->project_window()->perform_layout(app->nvg_context());
+    app->simulate_drag(app->project_window()->row_center(movie),
+                       view->point_at(mpp::Track::VideoA, 0));
+    check(project().clips.size() == 2, "dragging a movie with sound onto Video A places two clips");
+    const mpp::Clip* placed = project().clip_at(mpp::Track::VideoA, 0);
+    const mpp::Clip* sound = project().clip_at(mpp::Track::AudioA, 0);
+    check(placed && sound && placed->link == sound->id && placed->length() == 60,
+          "picture on Video A linked to sound on Audio A");
+    app->draw_all();
+    check(app->preview_window()->view()->frame().pixel(100, 100) == mpp::Color{0, 255, 64, 255},
+          "Preview shows frame 0 of the movie");
+    shot("11_placed");
+
+    // Show the ghost of a drag in progress.
+    app->drag_item(grey, view->point_at(mpp::Track::VideoB, 200), false);
+    shot("12_drop_ghost");
+    app->drag_item(grey, view->point_at(mpp::Track::VideoB, 200), true);
+    check(project().clip_at(mpp::Track::VideoB, 250) != nullptr, "the H.264 movie lands on Video B at 200");
+    check(project().clip_at(mpp::Track::AudioA, 250) == nullptr, "a movie without sound places no audio");
+
+    app->set_edit_line(60);
+    app->open_clip(picture);
+    check(app->place_at_edit_line(), "Place at Edit Line");
+    const mpp::Clip* still_clip = project().clip_at(mpp::Track::VideoA, 60);
+    check(still_clip && still_clip->length() == 150 && app->edit_line() == 210,
+          "the still goes on Video A after the movie, the edit line after it");
+
+    // The ruler moves the edit line; Preview follows.
+    app->simulate_click(view->ruler_point(250));
+    check(app->edit_line() == 250, "clicking the ruler moves the edit line");
+    app->draw_all();
+    const int level = app->preview_window()->view()->frame().pixel(160, 120).r;
+    check(level >= 96 && level <= 104, "Preview shows Video B where A is empty");
+
+    // Move the still by dragging its body.
+    app->simulate_drag(view->point_at(mpp::Track::VideoA, 120), view->point_at(mpp::Track::VideoA, 150));
+    still_clip = project().clip(still_clip->id);
+    check(still_clip && still_clip->start == 90, "dragging a clip moves it");
+    shot("13_moved");
+
+    // Trim the movie's tail; its sound follows.
+    app->simulate_drag(view->point_at(mpp::Track::VideoA, 59), view->point_at(mpp::Track::VideoA, 50));
+    placed = project().clip_at(mpp::Track::VideoA, 0);
+    sound = placed ? project().clip(placed->link) : nullptr;
+    check(placed && placed->out == 50 && sound && sound->out == 50, "dragging the end trims picture and sound");
+
+    // Cut it with the razor.
+    app->set_tool(TimelineTool::Razor);
+    app->simulate_click(view->point_at(mpp::Track::VideoA, 25));
+    check(project().clips_on(mpp::Track::VideoA).size() == 3 &&
+              project().clips_on(mpp::Track::AudioA).size() == 2,
+          "the razor cuts the picture and its sound");
+    app->set_tool(TimelineTool::Select);
+    shot("14_razor");
+
+    // Select the right-hand piece and clear it.
+    const mpp::Clip* piece = project().clip_at(mpp::Track::VideoA, 30);
+    app->simulate_click(view->point_at(mpp::Track::VideoA, 30));
+    check(piece && app->selected_clips() == std::vector<int>{piece->id}, "clicking a clip selects it");
+    app->clear_selected();
+    check(!project().clip_at(mpp::Track::VideoA, 30) && !project().clip_at(mpp::Track::AudioA, 30),
+          "Clear removes the clip and its sound");
+    app->toggle_undo();
+    check(project().clip_at(mpp::Track::VideoA, 30) != nullptr, "undo puts it back");
+
+    // A move that would overlap is refused with a message.
+    app->move_clip(project().clip_at(mpp::Track::VideoA, 90)->id, mpp::Track::VideoA, 10);
+    check(project().clip_at(mpp::Track::VideoA, 95) != nullptr && !app->message().empty(),
+          "an overlapping move is refused");
+
+    // Draw a work area.
+    app->simulate_drag(view->work_area_point(0), view->work_area_point(100));
+    check(project().work_in == 0 && project().work_out == 100, "dragging the work area bar sets it");
+    app->zoom(-1);
+    shot("15_work_area");
+
+    // Save, start over, open it again.
+    const std::string saved = out_dir + "/selftest.mpp";
+    check(app->save_to(saved), "save the project");
+    check(!app->dirty(), "saving clears the unsaved mark");
+    const std::size_t clip_count = project().clips.size();
+    app->set_edit_line(0);
+    app->menu_bar()->open(0);
+    app->menu_bar()->choose("New Project");
+    check(project().clips.empty(), "New Project after a save needs no prompt");
+    check(app->open(saved), "open the saved project");
+    check(project().clips.size() == clip_count && project().work_out == 100,
+          "the clips and work area come back");
+    app->razor(project().clip_at(mpp::Track::VideoA, 95)->id, 120);
+    app->menu_bar()->open(0);
+    app->menu_bar()->choose("New Project");
+    check(app->discard_prompt_open(), "New Project with unsaved changes asks first");
+    shot("16_prompt");
+    app->answer_discard_prompt(false);
+    check(project().clips.size() == clip_count + 1, "Cancel keeps the project");
   }
   nanogui::shutdown();
   std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "PASSED", failures);

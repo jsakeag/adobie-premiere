@@ -3,8 +3,8 @@
 ## Project summary
 A desktop video editor modeled on Adobe Premiere 1.0 (Mac, 1991) and 2.0 (Mac, 1992): Project bin, Clip window, A/B Construction window with a transition track and a superimpose track, transitions, filters, transparency keys, rubber-band fades, preview and export; then 2.0's titles, Sequence window, motion, speed, SMPTE timecode, EDL, image sequences, Filmstrip and capture. Sister repo: `../mock-photoshop`, whose structure and rules this follows. Feature list: [FEATURES.md](FEATURES.md). Libraries: [STACK.md](STACK.md).
 
-**Current milestone:** 2
-**Next step:** `Project` timeline model (tracks, clips, linked audio), clip commands, Construction window, Preview window, `.mpp` save/load.
+**Current milestone:** 3
+**Next step:** `Transition` on the project (T track: start, length, kind, settings), the transition registry with 24 transitions and a golden each, the renderer mixing A and B under a transition, a Transitions window to drag from, and a settings dialog (double-click a transition).
 
 **Known issues:** none yet.
 
@@ -35,7 +35,8 @@ Needs `brew install cmake ffmpeg`. NanoGUI and Catch2 come through FetchContent.
 ## Architecture (as built, then target)
 - *Built in milestone 1:* `Image`, `image_io`, `resample` (`resized`: separable tent filter on premultiplied floats; `fit_into`), `Rate` and timecode (`format_timecode`/`parse_timecode`, drop-frame), `MediaSource` with `FfmpegSource` and a still source (`open_media`), `MediaCache` (LRU frames by byte budget, whole audio per sample rate, per-source mutex), `Project` (settings, bin of `MediaItem`s with Clip-window marks), `Command`/`Editor` with whole-project snapshot undo, `bin_commands.h` (`AddItemCommand`, `RemoveItemCommand`, `SetItemMarksCommand`, `SetSettingsCommand`). App: `MenuBar` (custom drawn, dropdown is a screen child kept alive by a `ref`), `ProjectWindow` (drawn `BinList` rows with NanoVG thumbnails), `ClipWindow` (`FrameView`, `Scrubber`, transport, timecode entry), `SettingsWindow`, `--selftest`.
 - `FfmpegSource` keeps a `held` frame (last at or before the request) and a `pending` one (first past it), so reading forward never seeks; a backward or far jump seeks to the keyframe before. Mono sound is resampled as mono and copied to both channels (swresample's upmix pans to -3 dB). A sound-only file's `rate` is its sample rate and `frames` its sample count.
-- NanoGUI notes: `preferred_size_impl` is the virtual to override; `MOD_DOUBLE_CLICK` arrives in the press modifiers; give screen-level widgets fixed sizes or `perform_layout()` shrinks them.
+- *Built in milestone 2:* `Project` has `clips` (id, item, track, start, in, out, link) and the work area; `Track` enum (Video A, Video B, Superimpose, Audio A-C). `timeline_commands` (`PlaceClipCommand` with linked sound on the first free audio track, `MoveClipCommand`, `TrimClipCommand`, `RazorCommand`, `DeleteClipsCommand`, `SetWorkAreaCommand`, `check_clip`) refuse overlaps. `RemoveItemCommand` removes the item's clips; `SetSettingsCommand` rescales clips by flooring both ends. `compositing` (`composite_over`, `mix`, `flattened`), `renderer` (`clip_picture`, `render_frame`: A over B over black), `project_file` (JSON `.mpp`, version 1, absolute plus relative paths), `time_scale` (`TimeScale`, zoom levels, `tick_step`, `snap_points`/`snap`/`snap_span`). App: `ConstructionView` (one drawn widget: work bar, ruler, rows, ghosts while dragging, one command on release), `ConstructionWindow` (toolbar), `PreviewWindow`, bin-to-timeline drag through `App::drag_item`, Open/Save/Save As with the unsaved prompt. Screen is 1440x900.
+- NanoGUI notes: the screen subtracts (1, 2) from every cursor position before dispatch; `App::simulate_*` add it back. `preferred_size_impl` is the virtual to override; `MOD_DOUBLE_CLICK` arrives in the press modifiers; give screen-level widgets fixed sizes or `perform_layout()` shrinks them.
 - `core/` (`mpp_core`, namespace `mpp`): headless.
   - `Image` (RGBA8, straight alpha), `image_io` (stb), `resample` (bilinear/fit into a frame): copied from mock-photoshop's `ps::Image` and adapted.
   - `Rate` and `timecode`: frame rate as a rational plus a drop-frame flag; SMPTE formatting and parsing (`HH:MM:SS:FF`, `HH:MM:SS;FF` for drop-frame).
@@ -59,7 +60,7 @@ Needs `brew install cmake ffmpeg`. NanoGUI and Catch2 come through FetchContent.
 
 ### Milestones
 - [x] **1. Media and bin:** CMake scaffold; `Image`, `image_io`, `Rate`/timecode; `FfmpegSource`, `StillSource`, `MediaCache`; Project window (import, list with thumbnails and durations), Clip window (play, scrub, set in/out). Fixtures.
-- [ ] **2. Construction window:** `Project` model, commands and undo; place, move, trim, razor, delete clips; linked audio; time zoom; edit line; Preview window showing the frame under the edit line; `.mpp` save/load.
+- [x] **2. Construction window:** `Project` model, commands and undo; place, move, trim, razor, delete clips; linked audio; time zoom; edit line; Preview window showing the frame under the edit line; `.mpp` save/load.
 - [ ] **3. Transitions:** T track, 24 transitions with goldens, Transitions window (drag onto the T track), transition settings (direction, start/end %, border).
 - [ ] **4. Superimpose and fades:** S track compositing, transparency keys (Alpha, Chroma, Luminance, Blue Screen, Green Screen, Multiply, Screen), opacity rubber band on S, volume rubber bands on audio.
 - [ ] **5. Filters:** video filters with start/end values, filter dialog; audio filters (Echo, Pan, Backwards, Fill Left, Fill Right).
@@ -82,4 +83,5 @@ Everything from Premiere 3.0 and later: more tracks, real-time preview, easing, 
 Import movies, stills and image sequences; cut them together on A/B with transitions; superimpose a keyed clip with a fade; add filters, a title and a motion path; change a clip's speed; undo the last action; save and reopen the project; render and play the work area with sound; export a movie, an EDL and a Filmstrip.
 
 ## Session log
+- Session 1 (2026-10-20), milestone 2: timeline model and commands, renderer, project files, Construction and Preview windows. 40 unit tests, 64 self-test checks; screenshots inspected.
 - Session 1 (2026-10-20): plan written. Milestone 1: CMake scaffold, vendored stb/miniaudio/json/fonts, fixtures script (lossless QuickTime Animation and PCM, plus an H.264 file for seeking), core media and bin, menu bar, Project, Clip and Settings windows. 24 unit tests, 25 self-test checks; screenshots inspected.

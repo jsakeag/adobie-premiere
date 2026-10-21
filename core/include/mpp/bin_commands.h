@@ -28,6 +28,7 @@ class AddItemCommand : public Command {
   }
 };
 
+// Removes a file from the bin, and every clip that uses it.
 class RemoveItemCommand : public Command {
  public:
   explicit RemoveItemCommand(int id) : id(id) {}
@@ -35,11 +36,7 @@ class RemoveItemCommand : public Command {
   const int id;
 
  protected:
-  void apply(Project& p) override {
-    const int i = p.item_index(id);
-    if (i < 0) throw std::invalid_argument("No such item in the Project window");
-    p.bin.erase(p.bin.begin() + i);
-  }
+  void apply(Project& p) override;
 };
 
 // The Clip window's in and out marks.
@@ -64,6 +61,8 @@ class SetItemMarksCommand : public Command {
   }
 };
 
+// Changes the output format. Marks, clips and the work area are in project
+// frames, so a new frame rate rescales them to keep their times.
 class SetSettingsCommand : public Command {
  public:
   explicit SetSettingsCommand(ProjectSettings settings) : settings(settings) {}
@@ -71,35 +70,7 @@ class SetSettingsCommand : public Command {
   const ProjectSettings settings;
 
  protected:
-  void apply(Project& p) override {
-    if (settings.width < 16 || settings.height < 16 || settings.width > 4096 ||
-        settings.height > 4096) {
-      throw std::invalid_argument("Frame size must be between 16 and 4096 pixels");
-    }
-    if (settings.rate.num <= 0 || settings.rate.den <= 0) {
-      throw std::invalid_argument("Frame rate must be positive");
-    }
-    if (settings.audio_bits != 8 && settings.audio_bits != 16) {
-      throw std::invalid_argument("Audio must be 8 or 16 bit");
-    }
-    if (settings.audio_rate < 8000 || settings.audio_rate > 96000) {
-      throw std::invalid_argument("Audio rate must be between 8 and 96 kHz");
-    }
-    if (settings.still_frames < 1) throw std::invalid_argument("Still length must be at least one frame");
-    // Marks are in project frames, so a new rate rescales them.
-    if (settings.rate != p.settings.rate) {
-      const double scale = settings.rate.fps() / p.settings.rate.fps();
-      for (MediaItem& item : p.bin) {
-        item.in = static_cast<std::int64_t>(item.in * scale);
-        item.out = std::max(item.in + 1, static_cast<std::int64_t>(item.out * scale));
-        if (const auto length = source_length(item.info, settings.rate)) {
-          item.out = std::min(item.out, *length);
-          item.in = std::min(item.in, item.out - 1);
-        }
-      }
-    }
-    p.settings = settings;
-  }
+  void apply(Project& p) override;
 };
 
 }  // namespace mpp

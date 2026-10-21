@@ -13,8 +13,12 @@ add_executable(mpp_tests
   test_bin_commands.cpp
   test_ffmpeg_source.cpp
   test_media_cache.cpp
+  test_project_file.cpp
   test_rate.cpp
+  test_renderer.cpp
   test_resample.cpp
+  test_time_scale.cpp
+  test_timeline_commands.cpp
 )
 target_link_libraries(mpp_tests PRIVATE mpp_core Catch2::Catch2WithMain)
 target_compile_definitions(mpp_tests PRIVATE

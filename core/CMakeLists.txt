@@ -1,5 +1,7 @@
 add_library(mpp_core STATIC
+  src/bin_commands.cpp
   src/command.cpp
+  src/compositing.cpp
   src/editor.cpp
   src/ffmpeg_source.cpp
   src/image.cpp
@@ -7,8 +9,12 @@ add_library(mpp_core STATIC
   src/media.cpp
   src/media_cache.cpp
   src/project.cpp
+  src/project_file.cpp
   src/rate.cpp
+  src/renderer.cpp
   src/resample.cpp
+  src/time_scale.cpp
+  src/timeline_commands.cpp
 )
 target_include_directories(mpp_core PUBLIC include)
 target_include_directories(mpp_core SYSTEM PRIVATE

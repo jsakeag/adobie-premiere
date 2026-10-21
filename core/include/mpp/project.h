@@ -39,17 +39,61 @@ struct MediaItem {
   std::int64_t out = 0;
 };
 
+// The Construction window's tracks, top to bottom. The transition track
+// sits between Video A and Video B and holds transitions, not clips.
+enum class Track { VideoA, VideoB, Superimpose, AudioA, AudioB, AudioC };
+inline constexpr Track kAllTracks[] = {Track::VideoA, Track::VideoB, Track::Superimpose,
+                                       Track::AudioA, Track::AudioB, Track::AudioC};
+inline constexpr Track kAudioTracks[] = {Track::AudioA, Track::AudioB, Track::AudioC};
+
+inline bool is_audio_track(Track t) {
+  return t == Track::AudioA || t == Track::AudioB || t == Track::AudioC;
+}
+inline bool is_video_track(Track t) { return !is_audio_track(t); }
+const char* track_name(Track t);
+
+// One use of a bin item on a track. `in` and `out` are project frames into
+// the source (out exclusive); the clip covers timeline frames
+// [start, end()). A picture and its sound placed together are two clips
+// that name each other in `link`, and move, trim and delete together.
+struct Clip {
+  int id = 0;
+  int item = 0;
+  Track track = Track::VideoA;
+  std::int64_t start = 0;
+  std::int64_t in = 0;
+  std::int64_t out = 0;
+  int link = 0;
+
+  std::int64_t length() const { return out - in; }
+  std::int64_t end() const { return start + length(); }
+  bool covers(std::int64_t frame) const { return frame >= start && frame < end(); }
+};
+
 // Everything a project file holds. A plain value: Editor keeps a copy for
 // undo, and the UI reads it but changes it only through commands.
 struct Project {
   ProjectSettings settings;
   std::vector<MediaItem> bin;
+  std::vector<Clip> clips;  // in no particular order
+  // The yellow bar over the ruler: what Preview renders and Export writes.
+  std::int64_t work_in = 0;
+  std::int64_t work_out = 0;
   int next_id = 1;  // ids are never reused within a project
 
   const MediaItem* item(int id) const;
   MediaItem* item(int id);
   // Index in `bin`, or -1.
   int item_index(int id) const;
+
+  const Clip* clip(int id) const;
+  Clip* clip(int id);
+  // The clip on a track covering a frame, or nullptr.
+  const Clip* clip_at(Track track, std::int64_t frame) const;
+  // Clips on a track, sorted by start.
+  std::vector<const Clip*> clips_on(Track track) const;
+  // One past the last frame any clip covers; 0 when empty.
+  std::int64_t duration() const;
 };
 
 // How long a source runs in project frames, or nullopt for a still.

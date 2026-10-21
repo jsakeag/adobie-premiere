@@ -22,6 +22,55 @@ int Project::item_index(int id) const {
   return -1;
 }
 
+const char* track_name(Track t) {
+  switch (t) {
+    case Track::VideoA: return "Video A";
+    case Track::VideoB: return "Video B";
+    case Track::Superimpose: return "Super";
+    case Track::AudioA: return "Audio A";
+    case Track::AudioB: return "Audio B";
+    case Track::AudioC: return "Audio C";
+  }
+  return "";
+}
+
+const Clip* Project::clip(int id) const {
+  for (const Clip& c : clips) {
+    if (c.id == id) return &c;
+  }
+  return nullptr;
+}
+
+Clip* Project::clip(int id) {
+  for (Clip& c : clips) {
+    if (c.id == id) return &c;
+  }
+  return nullptr;
+}
+
+const Clip* Project::clip_at(Track track, std::int64_t frame) const {
+  for (const Clip& c : clips) {
+    if (c.track == track && c.covers(frame)) return &c;
+  }
+  return nullptr;
+}
+
+std::vector<const Clip*> Project::clips_on(Track track) const {
+  std::vector<const Clip*> out;
+  for (const Clip& c : clips) {
+    if (c.track == track) out.push_back(&c);
+  }
+  std::sort(out.begin(), out.end(),
+            [](const Clip* a, const Clip* b) { return a->start < b->start; });
+  return out;
+}
+
+std::int64_t Project::duration() const {
+  std::int64_t end = 0;
+  for (const Clip& c : clips) end = std::max(end, c.end());
+  return end;
+}
+
 std::optional<std::int64_t> source_length(const MediaInfo& info, Rate project_rate) {
   if (info.is_still()) return std::nullopt;
   const double frames = info.duration_seconds() * project_rate.fps();
