@@ -74,7 +74,7 @@ Track layout follows Windows 1.0, which is the only documented early layout ⚠�
 ### New windows
 - [x] **Sequence window**: arrange clips in a simple ordered list for a rough cut, then send them to the Construction window ✅ [2.0]
 - [x] **Title window**: create text titles to use as clips ✅ [2.0]
-- [ ] **Capture window**: record from a camera or microphone 🔁 (originally QuickTime video and audio capture ✅ [2.0])
+- [x] **Capture window**: record from a camera or microphone 🔁 (originally QuickTime video and audio capture ✅ [2.0]) ⚠️ (through AVFoundation on macOS, at the project's format, with FFmpeg's test pattern standing in for a camera)
 
 ### Titles
 - [x] Text in a chosen font, size, color and alignment ⚠️ (Roboto Regular and Bold, with an optional shadow)

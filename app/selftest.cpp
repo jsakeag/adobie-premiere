@@ -1,6 +1,8 @@
 #include "selftest.h"
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -15,6 +17,7 @@
 #include <nanogui/opengl.h>
 
 #include "app.h"
+#include "capture_window.h"
 #include "clip_window.h"
 #include "filters_window.h"
 #include "frame_view.h"
@@ -28,6 +31,7 @@
 #include "key_window.h"
 #include "make_windows.h"
 #include "motion_window.h"
+#include "mpp/audio_mixer.h"
 #include "mpp/ffmpeg_source.h"
 #include "mpp/filmstrip.h"
 #include "mpp/image_io.h"
@@ -753,6 +757,168 @@ int run_selftest(const std::string& out_dir, const std::string& fixtures) {
     }
     app->draw_all();
     shot("38_sequence_and_filmstrip");
+
+    // Milestone 10: capture, with libavfilter's test pattern standing in for
+    // a camera (the self-test never opens a real one).
+    const auto wait_until = [&](const std::function<bool()>& done) {
+      const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+      while (!done() && std::chrono::steady_clock::now() < until) {
+        app->draw_all();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
+      app->draw_all();
+      return done();
+    };
+    for (const auto& entry : std::filesystem::directory_iterator(out_dir)) {
+      if (entry.path().filename().string().rfind("Capture ", 0) == 0) std::filesystem::remove(entry.path());
+    }
+    app->set_capture_devices({});
+    app->menu_bar()->open(0);
+    check(app->menu_bar()->choose("Capture..."), "File > Capture...");
+    CaptureWindow* capture = app->capture_window();
+    check(capture != nullptr, "opens the Capture window");
+    check(wait_until([&] { return app->capture_session() && app->capture_session()->pictures() > 3; }),
+          "the test pattern plays live");
+    if (capture) {
+      const mpp::Image& live = capture->view()->frame();
+      check(live.width() == 320 && live.height() == 240 && live != mpp::Image(320, 240, mpp::kBlack),
+            "the live picture is in the window at the project's frame size");
+      check(app->capture_session()->has_sound(), "with the test tone");
+      shot("39_capture_live");
+      check(app->set_capture_folder(out_dir) && !app->set_capture_folder(out_dir + "/nowhere"),
+            "a capture folder must exist");
+      check(app->capture_record(15) && app->capture_recording(), "Record starts a movie");
+      wait_until([&] { return app->capture_session()->recorded_frames() >= 5; });
+      shot("40_capture_recording");
+      check(wait_until([&] { return !app->capture_recording(); }), "and it stops by itself at 15 frames");
+      const mpp::MediaItem& first_take = project().bin.back();
+      check(first_take.name == "Capture 1.mov" && first_take.info.kind == mpp::MediaKind::Movie &&
+                first_take.out == 15 && first_take.info.has_audio && first_take.info.width == 320,
+            "the movie is imported with its sound");
+      check(app->message().find("Captured 15 frames") != std::string::npos, "the status bar says so");
+
+      capture->record();
+      wait_until([&] { return app->capture_session()->recorded_frames() >= 5; });
+      capture->stop();
+      check(!app->capture_recording() && project().bin.back().name == "Capture 2.mov" &&
+                project().bin.back().out >= 6,
+            "Stop ends a recording and imports it under the next name");
+      app->toggle_undo();
+      check(project().bin.back().name == "Capture 1.mov", "undo takes the import back");
+      app->toggle_undo();
+
+      capture->choose(0, 0);
+      check(wait_until([&] { return app->capture_session()->open(); }) &&
+                !app->capture_session()->has_sound(),
+            "Sound: None records the picture alone");
+      shot("41_capture_silent");
+      capture->close();
+    }
+    check(app->capture_window() == nullptr, "Close closes the Capture window");
+
+    // The definition of done, through the app's windows and actions.
+    app->new_project();
+    {
+      mpp::ProjectSettings s = project().settings;
+      s.width = 160;
+      s.height = 120;
+      s.rate = {15, 1, false};
+      s.audio_bits = 16;
+      s.audio_rate = 22050;
+      s.still_frames = 15;
+      app->apply_settings(s);
+    }
+    check(app->import(media("counter.mov")) && app->import(media("still.png")) &&
+              app->import_sequence(seq_dir + "/frame_001.png"),
+          "done: import a movie, a still and an image sequence");
+    const int d_movie = project().bin[0].id, d_still = project().bin[1].id, d_seq = project().bin[2].id;
+    app->place(d_movie, mpp::Track::VideoA, 0);
+    app->place(d_seq, mpp::Track::VideoB, 20);
+    app->add_transition("cross_dissolve", 25);
+    app->place(d_still, mpp::Track::VideoA, 30);
+    check(project().clips.size() == 4 && project().transitions.size() == 1 &&
+              project().transitions[0].start == 20 && project().transitions[0].length == 10,
+          "done: cut on A/B with a transition over the overlap");
+    app->place(d_still, mpp::Track::Superimpose, 0);
+    const int d_super = project().clip_at(mpp::Track::Superimpose, 0)->id;
+    app->edit_key(d_super);
+    if (app->transparency()) {
+      mpp::TransparencyKey key;
+      key.type = mpp::KeyType::BlueScreen;
+      app->transparency()->set_key(key);
+      app->transparency()->ok();
+    }
+    app->set_fade(d_super, {{0, 0.0}, {10, 1.0}});
+    check(project().clip(d_super)->key.type == mpp::KeyType::BlueScreen &&
+              project().clip(d_super)->fade.size() == 2,
+          "done: a keyed Super clip with a fade");
+    const int d_movie_clip = project().clip_at(mpp::Track::VideoA, 0)->id;
+    app->edit_filters(d_movie_clip);
+    if (app->filters_window()) {
+      app->filters_window()->add("invert");
+      app->filters_window()->ok();
+    }
+    app->new_title();
+    if (app->title_window()) {
+      app->title_window()->set_text("THE END");
+      app->title_window()->ok();
+    }
+    app->place(project().bin.back().id, mpp::Track::Superimpose, 40);
+    const int d_title = project().clip_at(mpp::Track::Superimpose, 40)->id;
+    app->edit_key(d_title);
+    if (app->transparency()) {
+      mpp::TransparencyKey key;
+      key.type = mpp::KeyType::Alpha;
+      app->transparency()->set_key(key);
+      app->transparency()->ok();
+    }
+    app->edit_motion(d_title);
+    if (app->motion_window()) app->motion_window()->ok();
+    check(project().clip(d_movie_clip)->filters.size() == 1 &&
+              project().bin.back().info.kind == mpp::MediaKind::Title &&
+              project().clip(d_title)->motion.has_value(),
+          "done: a filter, a title and a motion path");
+    const int d_still_clip = project().clip_at(mpp::Track::VideoA, 30)->id;
+    app->edit_speed(d_still_clip);
+    if (app->speed_window()) {
+      app->speed_window()->set_speed(50);
+      app->speed_window()->ok();
+    }
+    check(project().clip(d_still_clip)->length() == 30, "done: half speed");
+    app->toggle_undo();
+    check(project().clip(d_still_clip)->length() == 15, "done: undo the last action");
+    app->toggle_undo();
+    app->set_work_area(0, 60);
+    const std::string d_path = out_dir + "/selftest_done.mpp";
+    check(app->save_to(d_path) && app->open(d_path) && app->message() == "Opened " + d_path &&
+              !app->dirty() && project().clips.size() == 6 &&
+              project().clip(d_still_clip)->speed == 50,
+          "done: save and reopen the project");
+    app->set_edit_line(47);
+    app->draw_all();
+    shot("42_done_program");
+    app->preview();
+    wait_for([&] { return app->rendering(); });
+    app->advance_playback(1.0);
+    app->draw_all();
+    float loudest = 0;
+    for (float v : mpp::mix_audio(project(), app->cache(), 0, 60).samples) loudest = std::max(loudest, std::abs(v));
+    check(app->program_playing() && app->program_frame() == 15 && loudest > 0.1f,
+          "done: render and play the work area, with sound");
+    shot("43_done_playing");
+    app->stop();
+    check(app->export_movie(out_dir + "/selftest_done", mpp::MovieFormat::Animation, false),
+          "done: Make > Movie");
+    wait_for([&] { return app->exporting(); });
+    check(app->export_edl(out_dir + "/selftest_done") && app->export_filmstrip(out_dir + "/selftest_done_strip"),
+          "done: Make > EDL and Make > Filmstrip");
+    {
+      mpp::FfmpegSource made(out_dir + "/selftest_done.mov");
+      const auto strip = mpp::read_filmstrip_info(mpp::load_image(out_dir + "/selftest_done_strip.png"));
+      check(made.info().frames == 60 && made.info().has_audio && strip && strip->count == 60 &&
+                made.frame(47) == mpp::render_frame(project(), app->cache(), 47),
+            "done: the movie and Filmstrip hold the work area");
+    }
   }
   nanogui::shutdown();
   std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "PASSED", failures);

@@ -13,11 +13,13 @@
 #include "audio_player.h"
 #include "construction_view.h"
 #include "menu_bar.h"
+#include "mpp/capture.h"
 #include "mpp/editor.h"
 #include "mpp/export_job.h"
 #include "mpp/media_cache.h"
 #include "mpp/render_job.h"
 
+class CaptureWindow;
 class ClipWindow;
 class ConstructionWindow;
 class ExportWindow;
@@ -186,6 +188,26 @@ class App : public nanogui::Screen {
   bool place_sequence(const std::string& transition, int overlap);
   SequenceWindow* sequence_window() const { return sequence_; }
 
+  // File > Capture (2.0). The window shows the chosen source live; Record
+  // writes a movie named "Capture N" into the capture folder, and when it
+  // stops (Stop, Esc, closing the window, or `frames` > 0 reached) the
+  // movie is imported.
+  void open_capture();
+  CaptureWindow* capture_window() const { return capture_window_; }
+  // Indexes into the Capture window's Video and Sound menus.
+  void choose_capture_source(int source, int sound);
+  void set_capture_format(mpp::MovieFormat format);
+  bool set_capture_folder(const std::string& folder);
+  const std::string& capture_folder() const { return capture_folder_; }
+  bool capture_record(std::int64_t frames = 0);
+  bool capture_stop();
+  bool capture_recording() const { return !capture_file_.empty(); }
+  const mpp::CaptureSession* capture_session() const { return capture_session_.get(); }
+  void close_capture();
+  // The devices the Capture window offers, instead of asking AVFoundation
+  // (the self-test, which never opens a real camera).
+  void set_capture_devices(mpp::CaptureDevices devices) { capture_devices_ = std::move(devices); }
+
   // Project > Settings.
   void open_settings();
   SettingsWindow* settings_window() const { return settings_; }
@@ -246,6 +268,11 @@ class App : public nanogui::Screen {
   void import_sequence_dialog();
   void export_edl_dialog();
   void export_filmstrip_dialog();
+  void choose_capture_folder_dialog();
+  // Opens the chosen capture source at the project's format.
+  void start_capture_session();
+  bool finish_capture();
+  void show_capture();
   // A double-click in the Project window: the Title window for a title,
   // the Clip window otherwise.
   void open_item(int id);
@@ -320,5 +347,17 @@ class App : public nanogui::Screen {
   SpeedWindow* speed_window_ = nullptr;
   SequenceWindow* sequence_ = nullptr;
   int titles_made_ = 0;  // for naming new titles
+
+  CaptureWindow* capture_window_ = nullptr;
+  std::optional<mpp::CaptureDevices> capture_devices_;  // fixed by the self-test
+  mpp::CaptureDevices capture_offered_;                 // what the window lists
+  int capture_source_ = 0;
+  int capture_sound_ = 0;
+  mpp::MovieFormat capture_format_ = mpp::MovieFormat::Animation;
+  std::string capture_folder_;
+  std::unique_ptr<mpp::CaptureSession> capture_session_;
+  mpp::ProjectSettings capture_settings_;  // the session's format
+  std::uint64_t capture_shown_ = 0;        // pictures() when last shown
+  std::string capture_file_;               // the movie being recorded
   nanogui::Label* status_ = nullptr;
 };

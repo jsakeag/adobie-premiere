@@ -141,6 +141,22 @@ TEST_CASE("media moved along with the project is found again", "[file]") {
   CHECK(loaded.bin[0].path.find("after") != std::string::npos);
 }
 
+TEST_CASE("media imported by a relative path is saved where it lies", "[file]") {
+  const fs::path root = fs::path(MPP_TEST_OUTPUT_DIR) / "relative";
+  fs::remove_all(root);
+  fs::create_directories(root / "shows");
+  mpp::Project p = project_with({"still.png"});
+  const fs::path cwd = fs::current_path();
+  fs::current_path(fs::path(fixture("still.png")).parent_path());
+  p.bin[0].path = "still.png";  // as `mock_premiere still.png` imports it
+  mpp::save_project(p, (root / "shows" / "show.mpp").string());
+  fs::current_path(root);  // opened from somewhere else
+  const mpp::Project loaded = mpp::load_project((root / "shows" / "show.mpp").string());
+  fs::current_path(cwd);
+  CHECK(fs::path(loaded.bin[0].path).is_absolute());
+  CHECK(fs::equivalent(loaded.bin[0].path, fixture("still.png")));
+}
+
 TEST_CASE("bad project files are refused", "[file]") {
   CHECK_THROWS(mpp::decode_project("not json"));
   CHECK_THROWS(mpp::decode_project("{\"format\": \"mock-photoshop\"}"));

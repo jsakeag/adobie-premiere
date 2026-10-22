@@ -2,7 +2,7 @@
 
 A desktop video editor modeled on Adobe Premiere 1.0-2.0 (1991-1992), written in C++17. The core is headless; a thin NanoGUI app shows it. Sister project to `mock-photoshop`. See [CLAUDE.md](CLAUDE.md) for the plan and architecture, [FEATURES.md](FEATURES.md) for the feature list and [STACK.md](STACK.md) for the libraries.
 
-**Status:** milestones 1-9 of 10 are done: importing media, the Project and Clip windows, the Construction window (placing, moving, trimming, cutting and deleting clips on A/B, Super and three audio tracks), the Preview window, saving projects, 24 transitions, the Super track with transparency keys, rubber-band fades, video and audio filters, rendered previews with sound, and making movies. That completes Premiere 1.0's feature set; from Premiere 2.0 so far there are titles, the Sequence window, motion paths, clip speed, image sequences, Filmstrips and EDLs.
+**Status:** all 10 milestones are done: importing media, the Project and Clip windows, the Construction window (placing, moving, trimming, cutting and deleting clips on A/B, Super and three audio tracks), the Preview window, saving projects, 24 transitions, the Super track with transparency keys, rubber-band fades, video and audio filters, rendered previews with sound, and making movies (Premiere 1.0's feature set); then from Premiere 2.0 titles, the Sequence window, motion paths, clip speed, image sequences, Filmstrips, EDLs and capturing from a camera. The definition of done in [CLAUDE.md](CLAUDE.md) runs as one headless test (`./build/tests/mpp_tests "[done]"`) and again through the self-test.
 
 ## Build and test
 
@@ -27,11 +27,20 @@ Test media lives in `tests/fixtures/`; `tests/fixtures/make_fixtures.sh` rebuild
 
 ```
 ./build/app/mock_premiere [files to import...]
+open "build/app/Mock Premiere.app"
 ```
 
+Both are the same program. The build also wraps it in `Mock Premiere.app` so macOS can ask for camera and microphone access in its own name when you capture; run from a terminal, macOS asks on behalf of the terminal app instead (both carry the usage descriptions in `app/Info.plist`).
+
 - **Projects:** File > New Project (Cmd+N), Open... (Cmd+O; or drop a `.mpp` file on the window), Save (Cmd+S) and Save As... (Cmd+Shift+S). A project file is JSON that refers to your media where it lies; if you move the project's folder along with its media, the files are found again. A `*` in the title bar means unsaved changes, and New, Open and Quit ask before dropping them.
-- **Menus** run along the top: File, Edit, Project, Clip, Windows. Click a title to pull a menu down; Esc or a click elsewhere closes it.
+- **Menus** run along the top: File, Edit, Project, Clip, Make, Windows. Click a title to pull a menu down; Esc or a click elsewhere closes it.
 - **Image sequences:** File > **Import Sequence...** and pick any one of a run of numbered images (`shot_0001.png`, `shot_0002.png`, ...). Every image with the same name and number of digits, counting up without gaps, comes in as one clip, one image a frame at the project's frame rate.
+- **Capture** (2.0): File > **Capture...** opens the Capture window, showing the chosen source live.
+  - **Video** lists the cameras macOS can see (including Continuity cameras and screens, as AVFoundation offers them), then **Test pattern** (FFmpeg's moving test card, for trying it without a camera). **Sound** is **None** or a microphone for a camera, or **Test tone** for the test pattern.
+  - **Format**: QuickTime Animation (lossless, large) or H.264. **Folder**: where movies go; **Choose...** picks another. It starts as the project's folder, or your Movies folder before the project is saved.
+  - **Record** starts a movie named `Capture 1.mov` (then `Capture 2.mov`, never over an earlier one); the status line counts its timecode. **Stop** (or Esc, or closing the window) ends it, and the movie is imported into the Project window like any other (Cmd+Z takes the import back; the file stays).
+  - It records at the project's frame size, rate and sound format, whatever the camera gives: pictures are fitted into the frame (letterboxed if the shape differs), each frame of the movie takes the newest picture at its time, and the sound is lined up with the first picture and made exactly as long as the pictures.
+  - The first time, macOS asks whether Mock Premiere (or your terminal) may use the camera and microphone. If you refused, the window says the camera couldn't be opened; allow it under System Settings > Privacy & Security > Camera and Microphone.
 - **Importing:** File > Import... (Cmd+I), the Project window's **Import...** button, or drop files on the window. Movies and sound files go through FFmpeg (QuickTime, MPEG-4, AVI, WAVE, AIFF, MP3 and more); PNG, JPEG, BMP, GIF and Targa files come in as stills.
 - **Titles:** File > **New Title** (Cmd+T) opens the Title window. The picture on the left is the title at your project's frame shape (checks show where it's clear); click a text or shape to select it and drag it to move it.
   - **Add Text**, **Rectangle** and **Oval** add items; **Delete** removes the selected one. For text: type in the Text box and press Return; choose **Regular** or **Bold**, **Left**, **Centre** or **Right** (the text's position is that edge or its centre), a **Size**, a soft **Shadow**, and a **Colour**. For shapes: **Filled** or outline, **Width**, **Height** and **Colour**.
@@ -68,7 +77,7 @@ Test media lives in `tests/fixtures/`; `tests/fixtures/make_fixtures.sh` rebuild
 - **Preview window:** the program at the edit line, at the project's frame size. Its buttons are Play (render and play, below) and Stop.
 - **Make menu:**
   - **Preview** (Return, or Space with the Construction window clicked last, or the Preview window's Play button): renders the work area (the whole program if there's no work area) in the background, with a progress bar in the Preview window, then plays it from its start with sound, in time with the sound. As in Premiere 1.0 this isn't real-time playback: the render comes first. Playing again with nothing changed skips straight to playback. The render is held in memory, so very long work areas at large frame sizes are refused.
-  - **Stop** (Esc): stops playback, or cancels a render or a movie in progress.
+  - **Stop** (Esc): stops playback, cancels a render or a movie in progress, or ends a capture.
   - **Movie...** (Cmd+M): choose **H.264 movie (.mp4)** (H.264 picture, AAC sound) or **QuickTime Animation (.mov)** (lossless picture, PCM sound; an 8-bit project's sound stays 8-bit), and the work area or the entire program, then where to save. It's written in the background at the project's frame size, rate and sound format, with progress in the Preview window. H.264 needs an even frame width and height.
   - **Frame...**: saves the picture at the edit line as a PNG.
   - **Filmstrip...**: saves the work area (or the whole program) as a Filmstrip, as Premiere 2.0 did for retouching in Photoshop: one tall PNG with the frames stacked top to bottom and a dark band under each giving its timecode. Paint on the frames in an image editor such as mock-photoshop, keep the bands as they are (the first one carries the frame size, count and rate), and import the PNG again: it comes back as a clip, not a still.

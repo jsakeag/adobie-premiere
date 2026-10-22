@@ -3,13 +3,16 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
+#include <filesystem>
 #include <utility>
 
 #include <nanogui/label.h>
 #include <nanogui/messagedialog.h>
 #include <nanogui/opengl.h>
 
+#include "capture_window.h"
 #include "clip_window.h"
 #include "filters_window.h"
 #include "frame_view.h"
@@ -146,6 +149,7 @@ std::vector<Menu> App::build_menus() {
         {"", "", nullptr},
         {"Import...", "Cmd+I", [this] { import_dialog(); }},
         {"Import Sequence...", "", [this] { import_sequence_dialog(); }},
+        {"Capture...", "", [this] { open_capture(); }},
         {"New Title", "Cmd+T", [this] { new_title(); }},
         {"", "", nullptr},
         {"Quit", "Cmd+Q", [this] { confirm_discard([this] { set_visible(false); }); }},
@@ -279,8 +283,9 @@ bool App::open(const std::string& path) {
   // Say which files couldn't be found; their clips show black.
   int missing = 0;
   for (const mpp::MediaItem& item : project().bin) {
+    if (item.title) continue;  // drawn, not read from a file
     try {
-      cache_.info(item.path);
+      cache_.info(item.sequence ? item.sequence->path(0) : item.path);
     } catch (const std::exception&) {
       ++missing;
     }
@@ -416,6 +421,189 @@ void App::import_dialog() {
   const std::vector<std::string> paths =
       nanogui::file_dialog(this, nanogui::FileDialogType::OpenMultiple, kImportTypes);
   for (const std::string& path : paths) import(path);
+}
+
+// ---- Capture (2.0) ----------------------------------------------------------
+
+namespace {
+
+std::string default_capture_folder(const std::string& doc_path) {
+  namespace fs = std::filesystem;
+  if (!doc_path.empty()) return fs::path(doc_path).parent_path().string();
+  if (const char* home = std::getenv("HOME")) {
+    const fs::path movies = fs::path(home) / "Movies";
+    std::error_code ec;
+    return fs::is_directory(movies, ec) ? movies.string() : home;
+  }
+  return fs::current_path().string();
+}
+
+// A folder short enough for the Capture window: "~" for home, and only
+// the last two folders of a long path.
+std::string short_folder(const std::string& folder) {
+  std::string text = folder;
+  if (const char* home = std::getenv("HOME")) {
+    const std::string h = home;
+    if (!h.empty() && text.compare(0, h.size(), h) == 0) text = "~" + text.substr(h.size());
+  }
+  if (text.size() <= 28) return text;
+  const std::filesystem::path p(text);
+  return ".../" + (p.parent_path().filename() / p.filename()).string();
+}
+
+}  // namespace
+
+void App::open_capture() {
+  if (capture_window_) {
+    move_window_to_front(capture_window_);
+    return;
+  }
+  capture_offered_ = capture_devices_ ? *capture_devices_ : mpp::list_capture_devices();
+  std::vector<std::string> cameras, microphones;
+  for (const mpp::CaptureDevice& d : capture_offered_.cameras) cameras.push_back(d.name);
+  for (const mpp::CaptureDevice& d : capture_offered_.microphones) microphones.push_back(d.name);
+  if (capture_folder_.empty()) capture_folder_ = default_capture_folder(doc_path_);
+
+  CaptureActions actions;
+  actions.choose = [this](int source, int sound) { choose_capture_source(source, sound); };
+  actions.set_format = [this](mpp::MovieFormat format) { set_capture_format(format); };
+  actions.choose_folder = [this] { choose_capture_folder_dialog(); };
+  actions.record = [this] { capture_record(); };
+  actions.stop = [this] { capture_stop(); };
+  actions.close = [this] { close_capture(); };
+  capture_window_ = new CaptureWindow(this, cameras, microphones, std::move(actions));
+  perform_layout();
+  layout_widgets();
+  capture_window_->set_position({(m_size.x() - capture_window_->width()) / 2, MenuBar::kHeight + 60});
+  move_window_to_front(capture_window_);
+  // The first camera with the first microphone, or the test pattern and tone.
+  const bool camera = !capture_offered_.cameras.empty();
+  choose_capture_source(0, camera && capture_offered_.microphones.empty() ? 0 : 1);
+}
+
+void App::choose_capture_source(int source, int sound) {
+  if (!capture_window_ || capture_recording()) return;
+  const int cameras = static_cast<int>(capture_offered_.cameras.size());
+  const int sounds = source < cameras ? static_cast<int>(capture_offered_.microphones.size()) + 1 : 2;
+  capture_source_ = std::clamp(source, 0, cameras);
+  capture_sound_ = std::clamp(sound, 0, sounds - 1);
+  capture_window_->show_choice(capture_source_, capture_sound_, capture_format_);
+  start_capture_session();
+}
+
+void App::start_capture_session() {
+  capture_session_.reset();
+  capture_settings_ = project().settings;
+  const bool camera = capture_source_ < static_cast<int>(capture_offered_.cameras.size());
+  const mpp::CaptureInput input =
+      camera ? mpp::device_input(capture_offered_.cameras[capture_source_].index,
+                                 capture_sound_ > 0
+                                     ? capture_offered_.microphones[capture_sound_ - 1].index
+                                     : -1)
+             : mpp::test_pattern_input(capture_settings_, capture_sound_ > 0);
+  capture_session_ = std::make_unique<mpp::CaptureSession>(input, capture_settings_);
+  capture_shown_ = 0;
+  if (capture_window_) capture_window_->view()->clear();
+}
+
+void App::set_capture_format(mpp::MovieFormat format) {
+  capture_format_ = format;
+  if (capture_window_) capture_window_->show_choice(capture_source_, capture_sound_, format);
+}
+
+bool App::set_capture_folder(const std::string& folder) {
+  std::error_code ec;
+  if (!std::filesystem::is_directory(folder, ec)) {
+    message_ = folder + " isn't a folder";
+    return false;
+  }
+  capture_folder_ = folder;
+  return true;
+}
+
+void App::choose_capture_folder_dialog() {
+  const std::vector<std::string> paths =
+      nanogui::file_dialog(this, nanogui::FileDialogType::PickFolder, {});
+  if (!paths.empty()) set_capture_folder(paths.front());
+}
+
+bool App::capture_record(std::int64_t frames) {
+  if (!capture_session_) {
+    message_ = "Open File > Capture first";
+    return false;
+  }
+  if (capture_recording()) return false;
+  // "Capture 1.mov", "Capture 2.mov", ...: never over an earlier one.
+  std::string path;
+  for (int n = 1;; ++n) {
+    path = (std::filesystem::path(capture_folder_) /
+            ("Capture " + std::to_string(n) + mpp::movie_extension(capture_format_)))
+               .string();
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) break;
+  }
+  const std::string error = capture_session_->record(path, capture_format_, frames);
+  if (!error.empty()) {
+    message_ = error;
+    return false;
+  }
+  capture_file_ = path;
+  message_ = "Recording " + path + " (Esc stops)";
+  return true;
+}
+
+bool App::capture_stop() {
+  if (!capture_recording()) return false;
+  return finish_capture();
+}
+
+bool App::finish_capture() {
+  const std::string path = std::move(capture_file_);
+  capture_file_.clear();
+  const std::string error = capture_session_->stop();
+  if (!error.empty()) {
+    message_ = error;
+    return false;
+  }
+  const std::int64_t frames = capture_session_->recorded_frames();
+  if (!import(path)) return false;
+  message_ = "Captured " + std::to_string(frames) + " frames as " + path;
+  return true;
+}
+
+void App::close_capture() {
+  if (capture_recording()) capture_stop();
+  capture_session_.reset();
+  if (CaptureWindow* window = capture_window_) {
+    capture_window_ = nullptr;
+    window->dispose_window();
+  }
+}
+
+void App::show_capture() {
+  if (!capture_window_ || !capture_session_) return;
+  const mpp::CaptureSession& session = *capture_session_;
+  if (session.pictures() != capture_shown_) {
+    capture_shown_ = session.pictures();
+    capture_window_->view()->set_frame(session.picture());
+  }
+  CaptureWindowState state;
+  state.recording = capture_recording();
+  state.folder = short_folder(capture_folder_);
+  const bool camera = capture_source_ < static_cast<int>(capture_offered_.cameras.size());
+  const mpp::ProjectSettings& s = capture_settings_;
+  if (state.recording) {
+    state.status = "Recording  " + mpp::format_timecode(session.recorded_frames(), s.rate);
+  } else if (!session.error().empty()) {
+    state.status = session.error();
+    if (camera && !session.open()) state.status += " (allowed in Privacy & Security?)";
+  } else if (!session.open()) {
+    state.status = camera ? "Starting the camera..." : "Starting...";
+  } else {
+    state.status = "Live: records " + std::to_string(s.width) + " x " + std::to_string(s.height) +
+                   ", " + mpp::rate_name(s.rate) + (session.has_sound() ? ", with sound" : "");
+  }
+  capture_window_->show(state);
 }
 
 void App::update_caption() {
@@ -742,6 +930,7 @@ void App::stop() {
     export_job_->cancel();
     finish_export();
   }
+  if (capture_recording()) capture_stop();
   stop_playing();
 }
 
@@ -1253,6 +1442,11 @@ mpp::Image App::thumbnail(int id) {
 void App::refresh() {
   if (render_job_ && render_job_->finished()) finish_render();
   if (export_job_ && export_job_->finished()) finish_export();
+  if (capture_recording() && !capture_session_->recording()) finish_capture();
+  // A new frame size or rate reopens the source at it.
+  if (capture_window_ && !capture_recording() && capture_settings_ != project().settings) {
+    start_capture_session();
+  }
   if (end_print_) end_print();
   if (clip_item_ && !project().item(clip_item_)) {
     clip_stop();
@@ -1271,6 +1465,7 @@ void App::refresh() {
     layout_widgets();
   }
   sequence_->refresh(project());
+  show_capture();
   show_clip();
   show_timeline();
 }

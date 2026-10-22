@@ -101,6 +101,15 @@ KeyType key_from(const std::string& name) {
   throw std::runtime_error("Unknown transparency '" + name + "'");
 }
 
+// Paths are saved absolute: one imported as "clip.mov" from a terminal
+// means that file in the folder the app was started in.
+std::string absolute(const std::string& path) {
+  if (path.empty()) return path;
+  std::error_code ec;
+  const fs::path full = fs::absolute(fs::path(path), ec);
+  return ec ? path : full.lexically_normal().string();
+}
+
 std::string relative_to(const std::string& path, const std::string& dir) {
   if (dir.empty()) return "";
   std::error_code ec;
@@ -131,8 +140,8 @@ std::string encode_project(const Project& p, const std::string& project_dir) {
   for (const MediaItem& item : p.bin) {
     const MediaInfo& i = item.info;
     json entry = {{"id", item.id},
-                   {"path", item.path},
-                   {"relative", relative_to(item.path, project_dir)},
+                   {"path", absolute(item.path)},
+                   {"relative", relative_to(absolute(item.path), project_dir)},
                    {"name", item.name},
                    {"in", item.in},
                    {"out", item.out},
@@ -148,8 +157,8 @@ std::string encode_project(const Project& p, const std::string& project_dir) {
                      {"channels", i.channels}}}};
     if (item.title) entry["title"] = title_json(*item.title);
     if (item.sequence) {
-      entry["sequence"] = {{"pattern", item.sequence->pattern},
-                           {"relative", relative_to(item.sequence->pattern, project_dir)},
+      entry["sequence"] = {{"pattern", absolute(item.sequence->pattern)},
+                           {"relative", relative_to(absolute(item.sequence->pattern), project_dir)},
                            {"first", item.sequence->first},
                            {"count", item.sequence->count}};
     }

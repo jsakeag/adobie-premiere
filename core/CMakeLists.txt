@@ -1,6 +1,7 @@
 add_library(mpp_core STATIC
   src/audio_mixer.cpp
   src/bin_commands.cpp
+  src/capture.cpp
   src/command.cpp
   src/compositing.cpp
   src/edl.cpp
@@ -37,10 +38,10 @@ target_compile_options(mpp_core PRIVATE -Wall -Wextra -Wpedantic -ffp-contract=o
 target_compile_definitions(mpp_core PUBLIC
   MPP_FONT_DIR="${PROJECT_SOURCE_DIR}/third_party/fonts")
 
-# FFmpeg from the system (brew install ffmpeg).
+# FFmpeg from the system (brew install ffmpeg); libavdevice for capture.
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
-  libavformat libavcodec libavutil libswscale libswresample)
+  libavdevice libavformat libavcodec libavutil libswscale libswresample)
 target_link_libraries(mpp_core PUBLIC PkgConfig::FFMPEG)
 find_package(Threads REQUIRED)
 target_link_libraries(mpp_core PUBLIC Threads::Threads)

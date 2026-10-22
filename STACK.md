@@ -56,7 +56,9 @@ mock-premiere-pro/
 
 ### Capture (2.0): libavdevice
 - On macOS, libavdevice's AVFoundation input handles the camera and microphone without any Objective-C code.
-- The app needs a camera and microphone usage description (an `Info.plist` in an app bundle) before macOS will grant access. Leave this until the Capture milestone.
+- The app needs a camera and microphone usage description before macOS will grant access. `app/Info.plist` has them; the build embeds it in the executable's `__TEXT,__info_plist` section and also copies the executable into an ad-hoc signed `Mock Premiere.app`.
+- AVFoundation's device list only comes out through FFmpeg's log (`list_devices`; `avdevice_list_input_sources` isn't implemented for it), so `list_capture_devices` collects the log for a moment and parses it.
+- Tests and the self-test record from libavdevice's `lavfi` input instead of a camera.
 
 ### Audio playback: miniaudio
 - One vendored header, compiled once in the core, in the same style as stb.

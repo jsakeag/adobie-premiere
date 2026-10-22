@@ -12,6 +12,8 @@ add_executable(mpp_tests
   golden.cpp
   test_audio_mixer.cpp
   test_bin_commands.cpp
+  test_capture.cpp
+  test_definition_of_done.cpp
   test_ffmpeg_source.cpp
   test_filters.cpp
   test_formats.cpp
